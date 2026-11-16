@@ -1,4 +1,5 @@
 # Switch2 Pico Audio Pack Bridge
+(以下AIによる説明)
 
 **Raspberry Pi Pico 2 H（RP2350）× 2台 ＋ Pimoroni Pico Audio Pack** を使い、Nintendo Switch 2 の USB 音声（ヘッドホン バーチャルサラウンド ON 対応）を **約 5ms の超低遅延** で PC 音とデジタル合成して聴きながら、**OBS には無加工（EQ・減衰なし）の Switch 2 生音** を渡すオープンソースのオーディオブリッジです。
 
