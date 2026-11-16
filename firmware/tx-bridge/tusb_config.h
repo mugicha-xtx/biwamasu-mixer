@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 mugicha_xtx
+#pragma once
+#include "pico.h"
+#ifndef CFG_TUSB_MCU
+#define CFG_TUSB_MCU OPT_MCU_RP2040
+#endif
+#ifndef CFG_TUSB_OS
+#define CFG_TUSB_OS OPT_OS_PICO
+#endif
+#ifndef PROBE_HID
+#define PROBE_HID 1
+#endif
+#define CFG_TUSB_RHPORT0_MODE (OPT_MODE_DEVICE | OPT_MODE_FULL_SPEED)
+#define CFG_TUD_ENDPOINT0_SIZE 64
+#define CFG_TUD_AUDIO 1
+#define CFG_TUD_CDC 0
+#define CFG_TUD_MSC 0
+#define CFG_TUD_MIDI 0
+#define CFG_TUD_VENDOR 0
+#define CFG_TUD_HID PROBE_HID
+#define CFG_TUD_HID_EP_BUFSIZE 64
+#define CFG_TUD_AUDIO_ENABLE_EP_OUT 1
+#define CFG_TUD_AUDIO_ENABLE_EP_IN 0
+#define CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP 0
+#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX 2
+#define CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_RX 2
+#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX 192
+#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ 768

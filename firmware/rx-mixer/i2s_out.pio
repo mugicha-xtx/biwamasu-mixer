@@ -1,0 +1,21 @@
+; SPDX-License-Identifier: MIT
+; Copyright (c) 2026 mugicha_xtx
+; 32-bit stereo Philips I2S transmitter for Pimoroni Pico Audio Pack (PCM5100A).
+; Out pin: GP9 (DATA), Side-set base: GP10 (bit0=BCK, bit1=LRCK).
+; 128 PIO cycles per stereo frame (64fs BCK = 3.072 MHz @ 48 kHz).
+; Expects two 32-bit signed PCM words per stereo frame: Word 0 = Left, Word 1 = Right.
+
+.program i2s_out_32
+.side_set 2
+
+bitloop_l:
+    out pins, 1       side 0b00
+    jmp x-- bitloop_l side 0b01
+    out pins, 1       side 0b10
+    set x, 30         side 0b11
+bitloop_r:
+    out pins, 1       side 0b10
+    jmp x-- bitloop_r side 0b11
+    out pins, 1       side 0b00
+public entry_point:
+    set x, 30         side 0b01
