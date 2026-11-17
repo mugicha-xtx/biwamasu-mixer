@@ -16,7 +16,7 @@ const tusb_desc_device_t pack_device_descriptor = {
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor = PACK_VID,
     .idProduct = PACK_PID,
-    .bcdDevice = 0x0100,
+    .bcdDevice = 0x0101,
     .iManufacturer = 1,
     .iProduct = 2,
     .iSerialNumber = 3,
@@ -43,9 +43,10 @@ static const uint8_t hid_report_desc[] = {
     TUD_AUDIO20_DESC_OUTPUT_TERM_LEN + \
     TUD_AUDIO20_DESC_CLK_SRC_LEN + \
     TUD_AUDIO20_DESC_INPUT_TERM_LEN + \
+    TUD_AUDIO20_DESC_FEATURE_UNIT_LEN(2) + \
     TUD_AUDIO20_DESC_OUTPUT_TERM_LEN)
 
-_Static_assert(CS_AC_INNER_LEN == 92, "CS_AC entity byte count");
+_Static_assert(CS_AC_INNER_LEN == 110, "CS_AC entity byte count");
 
 #define FU_CTRL_MUTE_VOL ( \
     (AUDIO20_CTRL_RW << AUDIO20_FEATURE_UNIT_CTRL_MUTE_POS) | \
@@ -72,8 +73,10 @@ const uint8_t pack_configuration_descriptor[] = {
     TUD_AUDIO20_DESC_CLK_SRC(UAC2_ENTITY_MIC_CLOCK, AUDIO20_CLOCK_SOURCE_ATT_EXT_CLK, 5, 0, 0),
     TUD_AUDIO20_DESC_INPUT_TERM(UAC2_ENTITY_MIC_INPUT_TERMINAL, AUDIO_TERM_TYPE_IN_GENERIC_MIC, 0,
         UAC2_ENTITY_MIC_CLOCK, 2, 0x03, 0, 0, 5),
+    TUD_AUDIO20_DESC_FEATURE_UNIT(UAC2_ENTITY_MIC_FEATURE_UNIT, UAC2_ENTITY_MIC_INPUT_TERMINAL, 0,
+        FU_CTRL_MUTE_VOL, FU_CTRL_MUTE_VOL, FU_CTRL_MUTE_VOL),
     TUD_AUDIO20_DESC_OUTPUT_TERM(UAC2_ENTITY_MIC_OUTPUT_TERMINAL, AUDIO_TERM_TYPE_USB_STREAMING, 0,
-        UAC2_ENTITY_MIC_INPUT_TERMINAL, UAC2_ENTITY_MIC_CLOCK, 0, 5),
+        UAC2_ENTITY_MIC_FEATURE_UNIT, UAC2_ENTITY_MIC_CLOCK, 0, 5),
 
     // Interface 1: Speaker Audio Streaming (EP 0x01 OUT Adaptive 196B)
     TUD_AUDIO20_DESC_STD_AS_INT(ITF_NUM_AUDIO_STREAMING_SPK, 0, 0, 4),
@@ -97,7 +100,7 @@ const uint8_t pack_configuration_descriptor[] = {
     TUD_HID_DESCRIPTOR(ITF_NUM_HID, 6, HID_ITF_PROTOCOL_NONE, sizeof(hid_report_desc), 0x82, 64, 10)
 };
 
-_Static_assert(sizeof(pack_configuration_descriptor) == CONFIG_TOTAL_LEN, "configuration length must be 262");
+_Static_assert(sizeof(pack_configuration_descriptor) == CONFIG_TOTAL_LEN, "configuration length must be 280");
 
 const uint8_t *tud_descriptor_device_cb(void) {
     return (const uint8_t *)&pack_device_descriptor;

@@ -81,9 +81,33 @@ void rx_feed(rx_parser_t *s, const uint8_t *data, unsigned count, rx_handler_t c
     }
 }
 
+static void rx_usb_recompute_gains_unlocked(rx_usb_audio_t *a) {
+    for (unsigned c = 0; c < 2u; c++) {
+        bool muted = ((a->mute_mask & 1u) != 0u) ||
+                     ((a->mute_mask & (1u << (c + 1u))) != 0u);
+        int32_t total_q8 = (int32_t)a->vol_q8[0] + (int32_t)a->vol_q8[c + 1u];
+        uint16_t q15;
+        if (muted || total_q8 <= -15360) {
+            q15 = 0u;
+        } else if (total_q8 >= 0) {
+            q15 = 32768u;
+        } else {
+            int32_t db_x100 = (total_q8 * 25 - 32) / 64;
+            float lin = dsp_db_x100_to_linear(db_x100);
+            uint32_t v = (uint32_t)(lin * 32768.0f + 0.5f);
+            if (v > 32768u) v = 32768u;
+            q15 = (uint16_t)v;
+        }
+        if (c == 0u) a->gain_q15_l = q15;
+        else a->gain_q15_r = q15;
+    }
+}
+
 void rx_usb_init(rx_usb_audio_t *a) {
     memset(a, 0, sizeof(*a));
     a->low = RX_CAPACITY;
+    a->gain_q15_l = 32768u;
+    a->gain_q15_r = 32768u;
 }
 
 unsigned rx_usb_level(const rx_usb_audio_t *a) {
@@ -107,6 +131,28 @@ void rx_usb_set_active(rx_usb_audio_t *a, bool on) {
 
 void rx_usb_mark_ended(rx_usb_audio_t *a) {
     a->ended = true;
+}
+
+void rx_usb_set_mute(rx_usb_audio_t *a, uint8_t ch, bool muted) {
+    if (ch > 2u) return;
+    uint32_t irq = 0;
+    dsp_lock_irq(&irq);
+    uint8_t bit = (uint8_t)(1u << ch);
+    if (muted) a->mute_mask |= bit;
+    else a->mute_mask &= (uint8_t)~bit;
+    rx_usb_recompute_gains_unlocked(a);
+    dsp_unlock_irq(irq);
+}
+
+void rx_usb_set_vol_q8(rx_usb_audio_t *a, uint8_t ch, int16_t vol_q8) {
+    if (ch > 2u) return;
+    if (vol_q8 < -15360) vol_q8 = -15360;
+    if (vol_q8 > 0) vol_q8 = 0;
+    uint32_t irq = 0;
+    dsp_lock_irq(&irq);
+    a->vol_q8[ch] = vol_q8;
+    rx_usb_recompute_gains_unlocked(a);
+    dsp_unlock_irq(irq);
 }
 
 void rx_route_packet(rx_usb_audio_t *mic, dsp_mixer_t *mixer, const rx_packet_t *p) {
@@ -195,8 +241,27 @@ unsigned rx_usb_take(rx_usb_audio_t *a, uint8_t out[196]) {
             return 0;
         }
     }
-    for (unsigned i = 0; i < n; i++) {
-        memcpy(out + i * 4u, a->pcm[(a->read + i) % RX_CAPACITY], 4u);
+    const uint16_t gl = a->gain_q15_l;
+    const uint16_t gr = a->gain_q15_r;
+    if (gl == 32768u && gr == 32768u) {
+        for (unsigned i = 0; i < n; i++) {
+            memcpy(out + i * 4u, a->pcm[(a->read + i) % RX_CAPACITY], 4u);
+        }
+    } else if (gl == 0u && gr == 0u) {
+        memset(out, 0, n * 4u);
+    } else {
+        for (unsigned i = 0; i < n; i++) {
+            const uint8_t *src = a->pcm[(a->read + i) % RX_CAPACITY];
+            int32_t l = (int16_t)((uint16_t)src[0] | ((uint16_t)src[1] << 8));
+            int32_t r = (int16_t)((uint16_t)src[2] | ((uint16_t)src[3] << 8));
+            l = (l * (int32_t)gl + 16384) >> 15;
+            r = (r * (int32_t)gr + 16384) >> 15;
+            uint8_t *dst = out + i * 4u;
+            dst[0] = (uint8_t)(int16_t)l;
+            dst[1] = (uint8_t)((uint16_t)(int16_t)l >> 8);
+            dst[2] = (uint8_t)(int16_t)r;
+            dst[3] = (uint8_t)((uint16_t)(int16_t)r >> 8);
+        }
     }
     a->read += n;
     a->consumed += n;

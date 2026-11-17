@@ -167,7 +167,24 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     unsigned real_f = 0;
     unsigned usb_n = rx_usb_packet(mic, usb_out, &real_f);
     CHECK(usb_n == 49u && real_f == 49u);
-    CHECK(mic->low == 239u);
+    CHECK((int16_t)(usb_out[0] | ((uint16_t)usb_out[1] << 8)) == 692);
+    CHECK((int16_t)(usb_out[2] | ((uint16_t)usb_out[3] << 8)) == 1384);
+
+    rx_usb_set_vol_q8(mic, 0u, -1536);
+    usb_n = rx_usb_packet(mic, usb_out, &real_f);
+    CHECK(usb_n == 49u && real_f == 49u);
+    int16_t atten_l = (int16_t)(usb_out[0] | ((uint16_t)usb_out[1] << 8));
+    CHECK(atten_l >= 368 && atten_l <= 374);
+
+    rx_usb_set_mute(mic, 0u, true);
+    usb_n = rx_usb_packet(mic, usb_out, &real_f);
+    CHECK(usb_n == 48u && real_f == 48u);
+    for (unsigned b = 0; b < 48u * 4u; b++) CHECK(usb_out[b] == 0u);
+
+    rx_usb_set_mute(mic, 0u, false);
+    rx_usb_set_vol_q8(mic, 0u, 0);
+    CHECK(mic->gain_q15_l == 32768u && mic->gain_q15_r == 32768u);
+    CHECK(mic->low == 142u);
     rx_usb_flush(mic);
     CHECK(mic->low == RX_CAPACITY);
 

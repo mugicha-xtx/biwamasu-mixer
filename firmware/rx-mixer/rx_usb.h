@@ -39,6 +39,10 @@ typedef struct {
     uint32_t high, low, small, normal, large, silence;
     uint32_t prime_ticks, partial_packets, first_index_low, first_seq;
     bool have, primed, active, ended;
+    int16_t vol_q8[3];   // [0]=master, [1]=L, [2]=R in 1/256 dB, [-15360..0] (-60..0 dB)
+    uint8_t mute_mask;   // bit0=master, bit1=L, bit2=R
+    uint16_t gain_q15_l; // 32768 = bit-exact 1.0x pass-through
+    uint16_t gain_q15_r; // 32768 = bit-exact 1.0x pass-through
 } rx_usb_audio_t;
 
 void rx_parser_reset(rx_parser_t *s);
@@ -49,6 +53,8 @@ void rx_usb_init(rx_usb_audio_t *a);
 void rx_usb_flush(rx_usb_audio_t *a);
 void rx_usb_set_active(rx_usb_audio_t *a, bool on);
 void rx_usb_mark_ended(rx_usb_audio_t *a);
+void rx_usb_set_mute(rx_usb_audio_t *a, uint8_t ch, bool muted);
+void rx_usb_set_vol_q8(rx_usb_audio_t *a, uint8_t ch, int16_t vol_q8);
 
 // Routes a validated UART packet to both raw USB capture (OBS) and Switch I2S playback.
 void rx_route_packet(rx_usb_audio_t *mic, dsp_mixer_t *mixer, const rx_packet_t *p);

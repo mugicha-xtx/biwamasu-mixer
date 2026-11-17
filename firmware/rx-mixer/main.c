@@ -499,10 +499,12 @@ bool tud_audio_get_req_entity_cb(uint8_t port, const tusb_control_request_t *r) 
         return false;
     }
 
-    if (entity_id == UAC2_ENTITY_SPK_FEATURE_UNIT) {
+    if (entity_id == UAC2_ENTITY_SPK_FEATURE_UNIT || entity_id == UAC2_ENTITY_MIC_FEATURE_UNIT) {
         TU_VERIFY(ch <= 2u);
+        bool is_mic = (entity_id == UAC2_ENTITY_MIC_FEATURE_UNIT);
         if (ctrl_sel == AUDIO20_FU_CTRL_MUTE && r->bRequest == AUDIO20_CS_REQ_CUR) {
-            audio20_control_cur_1_t m = { .bCur = (int8_t)((mixer.params.win_mute_mask >> ch) & 1u) };
+            uint8_t mask = is_mic ? mic.mute_mask : mixer.params.win_mute_mask;
+            audio20_control_cur_1_t m = { .bCur = (int8_t)((mask >> ch) & 1u) };
             return tud_audio_buffer_and_schedule_control_xfer(port, r, &m, sizeof(m));
         }
         if (ctrl_sel == AUDIO20_FU_CTRL_VOLUME) {
@@ -514,7 +516,7 @@ bool tud_audio_get_req_entity_cb(uint8_t port, const tusb_control_request_t *r) 
                 return tud_audio_buffer_and_schedule_control_xfer(port, r, &rv, sizeof(rv));
             }
             if (r->bRequest == AUDIO20_CS_REQ_CUR) {
-                audio20_control_cur_2_t cv = { .bCur = win_vol_q8[ch] };
+                audio20_control_cur_2_t cv = { .bCur = is_mic ? mic.vol_q8[ch] : win_vol_q8[ch] };
                 return tud_audio_buffer_and_schedule_control_xfer(port, r, &cv, sizeof(cv));
             }
         }
@@ -536,11 +538,13 @@ bool tud_audio_set_req_entity_cb(uint8_t port, const tusb_control_request_t *r, 
         return false;
     }
 
-    if (entity_id == UAC2_ENTITY_SPK_FEATURE_UNIT) {
+    if (entity_id == UAC2_ENTITY_SPK_FEATURE_UNIT || entity_id == UAC2_ENTITY_MIC_FEATURE_UNIT) {
         TU_VERIFY(ch <= 2u && r->bRequest == AUDIO20_CS_REQ_CUR);
+        bool is_mic = (entity_id == UAC2_ENTITY_MIC_FEATURE_UNIT);
         if (ctrl_sel == AUDIO20_FU_CTRL_MUTE) {
             TU_VERIFY(r->wLength == 1u);
-            dsp_mixer_set_win_mute(&mixer, ch, buf[0] != 0u);
+            if (is_mic) rx_usb_set_mute(&mic, ch, buf[0] != 0u);
+            else dsp_mixer_set_win_mute(&mixer, ch, buf[0] != 0u);
             return true;
         }
         if (ctrl_sel == AUDIO20_FU_CTRL_VOLUME) {
@@ -548,8 +552,12 @@ bool tud_audio_set_req_entity_cb(uint8_t port, const tusb_control_request_t *r, 
             int16_t vq8 = ((const audio20_control_cur_2_t *)buf)->bCur;
             if (vq8 < -15360) vq8 = -15360;
             if (vq8 > 0) vq8 = 0;
-            win_vol_q8[ch] = vq8;
-            dsp_mixer_set_win_vol_q8(&mixer, ch, vq8);
+            if (is_mic) {
+                rx_usb_set_vol_q8(&mic, ch, vq8);
+            } else {
+                win_vol_q8[ch] = vq8;
+                dsp_mixer_set_win_vol_q8(&mixer, ch, vq8);
+            }
             return true;
         }
     }

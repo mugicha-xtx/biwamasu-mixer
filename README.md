@@ -63,7 +63,7 @@
 2. **`firmware/rx-mixer` (`MIXER_USB_PID`) — PC USB Host Port**
    - Enumerates as a **UAC 2.0 composite Headset (Speaker OUT + Microphone IN) + Vendor HID control interface (`UAP1`)**.
    - **Speaker OUT**: Accepts 48 kHz stereo PC audio, resamples via 4-point Catmull-Rom Hermite interpolation, and mixes digitally with the UART console audio before 11-band floating-point biquad EQ and 32-bit PIO I2S output (`~5 ms` console-to-headphone latency).
-   - **Microphone IN**: Streams bit-exact pre-EQ raw console PCM (`0.0 dB`, no feature unit) for clean OBS recording.
+   - **Microphone IN**: Streams bit-exact pre-EQ raw console PCM (`0.0 dB` max Feature Unit; Windows level `100` = bit-exact `0.0 dB` pass-through with no OS mic boost) for clean OBS recording.
    - **Vendor HID**: Allows the host script (`scripts/Control-PicoAudioPack.ps1`) to load EQ filters, set gains, save configuration to flash, read diagnostics, or enter BOOTSEL.
 
 ### Build & Dependencies

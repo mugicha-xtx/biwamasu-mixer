@@ -34,7 +34,7 @@ dev = symbols['pack_device_descriptor']
 cfg = symbols['pack_configuration_descriptor']
 assert struct.unpack_from('<HH', dev, 8) == (exp_vid, exp_pid), 'Unexpected VID:PID in rx-mixer ELF'
 assert dev[4:7] == bytes((0xef, 2, 1)), 'Device must advertise IAD misc class'
-assert len(cfg) == struct.unpack_from('<H', cfg, 2)[0] == 262 and cfg[4] == 4
+assert len(cfg) == struct.unpack_from('<H', cfg, 2)[0] == 280 and cfg[4] == 4
 
 desc = []
 i = 0
@@ -53,7 +53,7 @@ cs = [x for x in desc if x[1] == 0x24]
 clk_ids = [x[3] for x in cs if x[2] == 10]
 fu_ids = [x[3] for x in cs if x[2] == 6]
 assert clk_ids == [0x04, 0x14]
-assert fu_ids == [0x02]
+assert fu_ids == [0x02, 0x13]
 
 eps = [x for x in desc if x[1] == 5]
 assert len(eps) == 3
@@ -89,4 +89,4 @@ for s in re.findall(rb'[ -~]{4,}', payload):
     for bad in ('users\\', 'users/', ':\\users', ':/users', '/home/', 'desktop-', 'laptop-', 'c:/', 'c:\\', 's:/', 'r:/', 't:/'):
         assert bad not in low, f'Unexpected string leak in UF2 payload: {s!r}'
 
-print(f'PASS: rx-mixer VID=0x{exp_vid:04x} PID=0x{exp_pid:04x}, UAC2+HID 262B, {len(blocks)} RP2350 UF2 blocks, 0 leaks')
+print(f'PASS: rx-mixer VID=0x{exp_vid:04x} PID=0x{exp_pid:04x}, UAC2+HID 280B, {len(blocks)} RP2350 UF2 blocks, 0 leaks')
