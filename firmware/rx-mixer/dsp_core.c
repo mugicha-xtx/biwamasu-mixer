@@ -473,9 +473,6 @@ void dsp_render_i2s_block(dsp_mixer_t *m, int32_t *out_i2s, unsigned frames) {
             sw_r = m->sw_tail_r;
         }
 
-        // Apply 11-band EQ on Switch path only (OBS keeps raw pre-EQ Switch PCM)
-        dsp_eq_process_stereo(&m->eq, &sw_l, &sw_r);
-
         // Resample PC audio with 4-point Catmull-Rom Hermite interpolation
         float pc_l = 0.0f, pc_r = 0.0f;
         if (pc_running) {
@@ -520,6 +517,11 @@ void dsp_render_i2s_block(dsp_mixer_t *m, int32_t *out_i2s, unsigned frames) {
 
         float mix_l = sw_l * m->cur_game_gain + pc_l * m->cur_pc_gain_l;
         float mix_r = sw_r * m->cur_game_gain + pc_r * m->cur_pc_gain_r;
+
+        // Apply 11-band headphone EQ to the mixed (Switch 2 + PC) stereo bus
+        // before MasterGain; OBS USB Mic branches upstream in rx_route_packet().
+        dsp_eq_process_stereo(&m->eq, &mix_l, &mix_r);
+
         if (tone_on) {
             mix_l += tone_sample(&m->tone_phase_l, 39370534u);
             mix_r += tone_sample(&m->tone_phase_r, 59055800u);

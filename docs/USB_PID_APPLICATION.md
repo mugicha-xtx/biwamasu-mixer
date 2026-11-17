@@ -42,8 +42,8 @@ Repository: https://github.com/mugicha-xtx/biwamasu-mixer
 MCU: 2x Raspberry Pi Pico 2 H (RP2350, PICO_BOARD=pico2)
 
 This project requires 2 USB Product IDs for two physically distinct RP2350 firmware images connected to separate USB hosts and bridged over 3 Mbps UART:
-1. switch2-usb-bridge (tx-bridge): UAC 1.0 stereo 48kHz audio sink + Vendor HID telemetry interface (console side).
-2. pico2h-audio-pack-uac2 (rx-mixer): UAC 2.0 composite headset (PC mix playback + bit-exact raw capture mic) + Vendor HID control interface for onboard 11-band EQ, gain settings, flash persistence, and firmware BOOTSEL trigger (PC side).
+1. biwamasu-mixer-tx (tx-bridge): UAC 1.0 stereo 48kHz audio sink + Vendor HID telemetry interface (console side).
+2. biwamasu-mixer-rx (rx-mixer): UAC 2.0 composite headset (PC mix playback + bit-exact raw capture mic) + Vendor HID control interface for onboard 11-band post-mix EQ, gain settings, flash persistence, and firmware BOOTSEL trigger (PC side).
 ```
 
 ### B. もし `pid.codes`（VID `0x1209`）を使う場合
@@ -80,12 +80,13 @@ PID が正式に割り当てられたら（例：`USB_VID = 0x2e8a`、`BRIDGE_US
 .\scripts\Build-Release.ps1
 ```
 
-完了すると `dist/` フォルダ内に以下の 2 ファイルが生成されます：
-- `dist/switch2-usb-bridge.uf2`（Switch 2 側 `Pico①` 用）
-- `dist/pico2h-audio-pack-uac2.uf2`（PC 側 `Pico②` 用）
+完了すると `dist/` フォルダ内に以下のファイルが生成されます：
+- `dist/biwamasu-mixer-tx.uf2`（Switch 2 側 `Pico①` 用）
+- `dist/biwamasu-mixer-rx.uf2`（PC 側 `Pico②` 用）
+- `dist/biwamasu-mixer-release.zip`（GitHub Releases 配布用アーカイブ。UF2・操作スクリプト・設定見本・README・配線画像・ライセンス一式を自動同梱）
 
 ### GitHub Releases へ公開するときに必ず同梱するもの
-`THIRD_PARTY_NOTICES.md` のライセンス条件を満たすため、2 つの `.uf2` ファイルと一緒に以下のファイルを必ず同梱（同じ Zip に入れる、またはリリース添付）してください：
+`THIRD_PARTY_NOTICES.md` のライセンス条件を満たすため、2 つの `.uf2` ファイルと一緒に以下のファイルを必ず同梱（生成された `dist/biwamasu-mixer-release.zip` をそのままアップロードすればすべて含まれます）してください：
 - `LICENSE`
 - `THIRD_PARTY_NOTICES.md`
 - `licenses/` フォルダ内の全テキストファイル（4 ファイル）
@@ -94,14 +95,14 @@ PID が正式に割り当てられたら（例：`USB_VID = 0x2e8a`、`BRIDGE_US
 
 ## 補足：自分の手元の実機やローカル開発テストについて
 
-PID 申請前のローカル環境だけでビルドや制御スクリプトの動作をテストしたい場合は、コマンドに `-DevTestIds` を付けて実行できます（※ 生成されたテスト用 `.uf2` は他人に配布しないでください）：
+PID 申請前のローカル環境だけでビルドや制御スクリプトの動作をテストしたい場合は、コマンドに `-DevTestIds` を付けて実行できます（※ 生成されたテスト用 `.uf2` / `biwamasu-mixer-dev-do-not-distribute.zip` は他人に配布しないでください）：
 
 ```powershell
 # ローカル検証専用の仮 ID (0xCAFE) ビルド（公開配布禁止）
 .\scripts\Build-Release.ps1 -DevTestIds
 
 # すでに手元で 0xCAFE 版が動いている Pico② を操作する場合
-.\scripts\Control-PicoAudioPack.ps1 -DevTestIds
+.\scripts\Control-BiwamasuMixer.ps1 -DevTestIds
 ```
 
-後日、正規 ID 版の新しい `.uf2` を作ったら、手元の `Pico②` を `.\scripts\Control-PicoAudioPack.ps1 -DevTestIds -Bootsel` で再書き込みモードにして新しい `.uf2` に書き換えることで、自分用と公開版を完全一致させることができます（`Control-PicoAudioPack.ps1` は `include/usb_ids.h` に書かれた ID を自動参照するようになります）。
+後日、正規 ID 版の新しい `.uf2` を作ったら、手元の `Pico②` を `.\scripts\Control-BiwamasuMixer.ps1 -DevTestIds -Bootsel` で再書き込みモードにして新しい `.uf2` に書き換えることで、自分用と公開版を完全一致させることができます（`Control-BiwamasuMixer.ps1` は `include/usb_ids.h` に書かれた ID を自動参照するようになります）。

@@ -41,4 +41,4 @@ This project uses off-the-shelf open hardware modules wired on a standard solder
 | `I2S_BCK` | Physical Pin `14` (`GP10`) | Physical Pin `14` (`BCK`) | 3.072 MHz bit clock |
 | `I2S_LRCK` | Physical Pin `15` (`GP11`) | Physical Pin `15` (`LRCK`) | 48 kHz word select |
 
-For step-by-step Japanese breadboard assembly instructions, see [docs/GUIDE_JA.md](../docs/GUIDE_JA.md).
+For step-by-step Japanese breadboard assembly instructions and wiring photos, see [README.md](../README.md).

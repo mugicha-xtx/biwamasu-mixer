@@ -225,6 +225,28 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     dsp_render_i2s_block(m, i2s, DSP_I2S_BLOCK_FRAMES);
     CHECK(i2s[62] > 140000000 && i2s[63] < -70000000);
 
+    // 7. Post-mix EQ must process PC audio too (while OBS mic stays pre-EQ)
+    dsp_mixer_init(m);
+    p = m->params;
+    p.master_db_x100 = 0;
+    dsp_mixer_set_params(m, &p);
+    dsp_eq_set_preamp(&m->eq, 0.5f);
+    dsp_eq_set_band(&m->eq, 0u, &test_lsc);
+    dsp_mixer_set_eq_enabled(m, true);
+    dsp_pc_set_active(m, true);
+    for (unsigned pkt = 0; pkt < 8u; pkt++) {
+        for (unsigned i = 0; i < 48u; i++) {
+            u16_le(pcm + i * 4u, 4096u);
+            u16_le(pcm + i * 4u + 2u, (uint16_t)(-4096));
+        }
+        dsp_pc_push_s16le(m, pcm, 48u);
+    }
+    for (unsigned blk = 0; blk < 11u; blk++) {
+        dsp_render_i2s_block(m, i2s, DSP_I2S_BLOCK_FRAMES);
+    }
+    CHECK(i2s[62] > 18000000 && i2s[62] < 50000000);
+    CHECK(i2s[63] < -18000000 && i2s[63] > -50000000);
+
     // Clean re-init so caller boots into untouched defaults (EQ off, -45 dB)
     dsp_mixer_init(m);
     rx_usb_init(mic);

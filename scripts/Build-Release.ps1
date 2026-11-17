@@ -167,14 +167,46 @@ try {
     & $python "$posixRoot/tests/check_rx_artifact.py" "$rxBin/pico_audio_pack.elf" "$rxBin/pico_audio_pack.uf2" $vidHex $rxPidHex
     if ($LASTEXITCODE) { throw 'rx-mixer artifact check failed' }
 
-    Copy-Item -LiteralPath "$txBin/switch2_usb_bridge.uf2" -Destination (Join-Path $distDir 'switch2-usb-bridge.uf2') -Force
-    Copy-Item -LiteralPath "$rxBin/pico_audio_pack.uf2"    -Destination (Join-Path $distDir 'pico2h-audio-pack-uac2.uf2') -Force
+    $txUf2 = Join-Path $distDir 'biwamasu-mixer-tx.uf2'
+    $rxUf2 = Join-Path $distDir 'biwamasu-mixer-rx.uf2'
+    Copy-Item -LiteralPath "$txBin/switch2_usb_bridge.uf2" -Destination $txUf2 -Force
+    Copy-Item -LiteralPath "$rxBin/pico_audio_pack.uf2"    -Destination $rxUf2 -Force
+
+    # Package self-contained GitHub Releases archive
+    $bundleRoot = Join-Path $distDir 'bundle'
+    if (Test-Path -LiteralPath $bundleRoot) {
+        Remove-Item -Recurse -Force -LiteralPath $bundleRoot
+    }
+    $bundleDir = Join-Path $bundleRoot 'biwamasu-mixer'
+    foreach ($sub in @('scripts', 'include', 'presets', 'images', 'hardware', 'licenses')) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $bundleDir $sub) | Out-Null
+    }
+    Copy-Item -LiteralPath $txUf2, $rxUf2, (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $bundleDir -Force
+    Copy-Item -LiteralPath (Join-Path $root 'scripts/Control-BiwamasuMixer.ps1') -Destination (Join-Path $bundleDir 'scripts') -Force
+    Copy-Item -LiteralPath (Join-Path $root 'presets/sample-peace.txt') -Destination (Join-Path $bundleDir 'presets') -Force
+    Get-ChildItem -LiteralPath (Join-Path $root 'images') -Filter '*.jpg' -File |
+        Copy-Item -Destination (Join-Path $bundleDir 'images') -Force
+    Copy-Item -LiteralPath (Join-Path $root 'hardware/schematic.svg'), (Join-Path $root 'hardware/README.md') -Destination (Join-Path $bundleDir 'hardware') -Force
+    Get-ChildItem -LiteralPath (Join-Path $root 'licenses') -File |
+        Copy-Item -Destination (Join-Path $bundleDir 'licenses') -Force
+
+    $stampedUsbIds = $usbIdsText `
+        -replace '(#define\s+USB_VID\s+)0x[0-9a-fA-F]+u?', "`${1}$('0x{0:x4}u' -f $effVid)" `
+        -replace '(#define\s+BRIDGE_USB_PID\s+)0x[0-9a-fA-F]+u?', "`${1}$('0x{0:x4}u' -f $effBridgePid)" `
+        -replace '(#define\s+MIXER_USB_PID\s+)0x[0-9a-fA-F]+u?', "`${1}$('0x{0:x4}u' -f $effMixerPid)"
+    [IO.File]::WriteAllText((Join-Path $bundleDir 'include/usb_ids.h'), $stampedUsbIds, [Text.UTF8Encoding]::new($false))
+
+    $zipName = if ($DevTestIds) { 'biwamasu-mixer-dev-do-not-distribute.zip' } else { 'biwamasu-mixer-release.zip' }
+    $zipPath = Join-Path $distDir $zipName
+    if (Test-Path -LiteralPath $zipPath) { Remove-Item -Force -LiteralPath $zipPath }
+    Compress-Archive -Path "$bundleRoot\*" -DestinationPath $zipPath -Force
+    Remove-Item -Recurse -Force -LiteralPath $bundleRoot
 
     if ($DevTestIds) {
-        Write-Warning 'Built with -DevTestIds (0xCAFE test IDs). Do NOT distribute these UF2 binaries publicly.'
+        Write-Warning 'Built with -DevTestIds (0xCAFE test IDs). Do NOT distribute these UF2 binaries or dev ZIP publicly.'
     }
 
-    Get-FileHash -LiteralPath (Join-Path $distDir 'switch2-usb-bridge.uf2'), (Join-Path $distDir 'pico2h-audio-pack-uac2.uf2') -Algorithm SHA256 |
+    Get-FileHash -LiteralPath $txUf2, $rxUf2, $zipPath -Algorithm SHA256 |
         Format-Table -AutoSize
 } finally {
     $env:PATH = $oldPath
