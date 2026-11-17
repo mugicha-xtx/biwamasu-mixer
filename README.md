@@ -1,4 +1,4 @@
-# Biwamasu Mixer (Switch2 Pico Audio Pack Bridge)
+# Biwamasu Mixer
 (以下AIによる説明)
 
 **Biwamasu Mixer** は、**Raspberry Pi Pico 2 H（RP2350）× 2台 ＋ Pimoroni Pico Audio Pack** を使い、Nintendo Switch 2 の USB 音声（ヘッドホン バーチャルサラウンド ON 対応）を **約 5ms の超低遅延** で PC 音とデジタル合成して聴きながら、**OBS には無加工（EQ・減衰なし）の Switch 2 生音** を渡すオープンソースのオーディオブリッジです。
@@ -50,7 +50,7 @@
 
 ## English Summary (For Open-Source Hardware & USB PID Reviewers)
 
-**Biwamasu Mixer** (`switch2-pico-audio-pack-bridge`) is a dual-RP2350 open-source USB audio bridge and hardware mixer licensed under the **MIT License** (`Copyright (c) 2026 mugicha_xtx`).
+**Biwamasu Mixer** (formerly `Switch2 Pico Audio Pack Bridge`) is a dual-RP2350 open-source USB audio bridge and hardware mixer licensed under the **MIT License** (`Copyright (c) 2026 mugicha_xtx`).
 
 ### Architecture & Hardware
 - **Hardware Platform & Schematic**: Two physically wired, non-wireless **Raspberry Pi Pico 2 H** (`RP2350`, `PICO_BOARD=pico2`, no `cyw43` wireless stack) paired with a **Pimoroni Pico Audio Pack** (`PCM5100A` I2S DAC + `PAM8908` headphone amp). Complete circuit diagram, BOM, and netlist are documented in **[hardware/README.md](hardware/README.md)** ([hardware/schematic.svg](hardware/schematic.svg)).

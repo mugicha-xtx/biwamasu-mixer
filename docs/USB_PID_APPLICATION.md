@@ -37,8 +37,8 @@ PID を申請するには、まずこのプロジェクトのソースコード�
 
 #### 申請フォームにそのまま使える英文説明テンプレート
 ```text
-Project: Biwamasu Mixer / Switch2 Pico Audio Pack Bridge (Open-source MIT hardware/firmware project)
-Repository: https://github.com/mugicha-xtx/switch2-pico-audio-pack-bridge
+Project: Biwamasu Mixer (Open-source MIT hardware/firmware project)
+Repository: https://github.com/mugicha-xtx/biwamasu-mixer
 MCU: 2x Raspberry Pi Pico 2 H (RP2350, PICO_BOARD=pico2)
 
 This project requires 2 USB Product IDs for two physically distinct RP2350 firmware images connected to separate USB hosts and bridged over 3 Mbps UART:
