@@ -788,7 +788,7 @@ int main(void) {
             uint8_t wmute = mixer.params.win_mute_mask;
             dsp_eq_init_flat(&mixer.eq, false);
             mixer.params.game_db_x100 = 0;
-            mixer.params.master_db_x100 = -4000;
+            mixer.params.master_db_x100 = -4500;
             mixer.params.pc_trim_db_x100 = 0;
             mixer.params.win_vol_db_x100[0] = wvol0;
             mixer.params.win_vol_db_x100[1] = wvol1;

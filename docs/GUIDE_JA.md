@@ -10,7 +10,7 @@ Switch 2（ヘッドホン バーチャルサラウンド ON）と PC 音（Disc
 
 - **初期 EQ 状態**：**OFF（フラット）**  
   （※ 全バンド `0 dB` の記入見本ファイルを [presets/sample-peace.txt](../presets/sample-peace.txt) に同梱しています。お好みの数値に書き換えるか、ご自身の Peace ファイルを指定して適用できます）
-- **初期マスター音量**：**`-40.0 dB`**（高感度なヘッドホン・イヤホンでも突然大音量にならない控えめ設定）
+- **初期マスター音量**：**`-45.0 dB`**（高感度なヘッドホン・イヤホンでも突然大音量にならない控えめ設定）
 - **Windows 上での表示名**：
   - 再生デバイス（PC音を混ぜる出力先）：`ヘッドホン (Biwamasu Mixer)`
   - 録音デバイス（OBS に生音を入れる入力元）：`マイク (Biwamasu Mixer)`
@@ -133,7 +133,7 @@ Switch 2（ヘッドホン バーチャルサラウンド ON）と PC 音（Disc
   # 例：Switch 2 側を少し下げ（-6 dB）、PC 音を基準より控えめに（-3 dB）して保存
   .\scripts\Control-PicoAudioPack.ps1 -GameDb -6 -PcTrimDb -3 -Save
   ```
-- **設定を工場出荷状態（EQ OFF / `-40.0 dB`）に戻す**：
+- **設定を工場出荷状態（EQ OFF / `-45.0 dB`）に戻す**：
   ```powershell
   .\scripts\Control-PicoAudioPack.ps1 -ResetDefaults -Save
   ```

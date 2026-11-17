@@ -74,11 +74,11 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     float g_m12 = dsp_db_x100_to_linear(-1204);
     CHECK(g_m12 > 0.2499f && g_m12 < 0.2502f);
 
-    // 3. Default off/flat/safe -40dB verification + explicit biquad attenuation test
+    // 3. Default off/flat/safe -45dB verification + explicit biquad attenuation test
     dsp_mixer_init(m);
     dsp_eq_t *eq = &m->eq;
     CHECK(!m->params.eq_enabled && !eq->enabled);
-    CHECK(m->params.master_db_x100 == -4000);
+    CHECK(m->params.master_db_x100 == -4500);
     CHECK(eq->preamp_linear == 1.0f);
 
     dsp_mixer_set_eq_enabled(m, true);
@@ -225,7 +225,7 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     dsp_render_i2s_block(m, i2s, DSP_I2S_BLOCK_FRAMES);
     CHECK(i2s[62] > 140000000 && i2s[63] < -70000000);
 
-    // Clean re-init so caller boots into untouched defaults (EQ off, -40 dB)
+    // Clean re-init so caller boots into untouched defaults (EQ off, -45 dB)
     dsp_mixer_init(m);
     rx_usb_init(mic);
     return 0;

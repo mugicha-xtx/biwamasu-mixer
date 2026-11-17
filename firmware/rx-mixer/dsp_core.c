@@ -135,7 +135,7 @@ void dsp_mixer_init(dsp_mixer_t *m) {
     m->pc_low = DSP_RING_CAPACITY;
     m->pc_step_q16 = 65536u;
     m->params.game_db_x100 = 0;
-    m->params.master_db_x100 = -4000; // Safe headphone-friendly default -40.0 dB
+    m->params.master_db_x100 = -4500; // Safe headphone-friendly default -45.0 dB
     m->params.pc_trim_db_x100 = 0;
     m->params.win_vol_db_x100[0] = 0;
     m->params.win_vol_db_x100[1] = 0;
