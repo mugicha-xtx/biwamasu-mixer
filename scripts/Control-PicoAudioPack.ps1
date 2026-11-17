@@ -212,7 +212,7 @@ function To-Signed32([uint32]$u) {
 }
 
 if ($CheckOnly) {
-    $samplePeace = Join-Path $root 'presets/wh-1000xm6-peace.txt'
+    $samplePeace = Join-Path $root 'presets/sample-peace.txt'
     $parsed = if (Test-Path -LiteralPath $samplePeace) { Parse-PeaceFilters -Path $samplePeace } else { $null }
     [ordered]@{
         CheckOnlyPassed = ($null -ne ('AudioPackHid' -as [type])) -and ($null -ne $parsed)

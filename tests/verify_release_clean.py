@@ -17,7 +17,7 @@ required_files = [
     'licenses/tinyusb-MIT.txt',
     'licenses/cmsis-Apache-2.0.txt',
     'licenses/pico-printf-MIT.txt',
-    'presets/wh-1000xm6-peace.txt',
+    'presets/sample-peace.txt',
     'docs/GUIDE_JA.md',
     'docs/USB_PID_APPLICATION.md',
     'tools/downloads.sha256.json',

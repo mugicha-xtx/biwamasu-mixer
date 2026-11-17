@@ -47,34 +47,49 @@ def rbj_biquad_f64(kind: str, fc: float, gdb: float, q: float, fs: float = 48000
 root = pathlib.Path(os.environ.get('BRIDGE_TEST_ROOT', str(pathlib.Path(__file__).resolve().parents[1])))
 deps = pathlib.Path(os.environ.get('BRIDGE_DEPS_DIR', str(root / '.deps')))
 
-peace_path = root / 'presets/wh-1000xm6-peace.txt'
+peace_path = root / 'presets/sample-peace.txt'
 peace_text = peace_path.read_text(encoding='utf-8')
 assert 'Device:' not in peace_text and '{' not in peace_text, 'Sample preset must stay device-ID free'
 preamp_m = re.search(r'Preamp:\s*([+-]?\d+(?:\.\d+)?)\s*dB', peace_text)
-assert preamp_m, 'Missing Preamp in presets/wh-1000xm6-peace.txt'
+assert preamp_m, 'Missing Preamp in presets/sample-peace.txt'
 preamp_db = float(preamp_m.group(1))
+assert preamp_db == 0.0, f'Expected 0 dB sample Preamp, got {preamp_db}'
 bands_f64 = []
 for m in re.finditer(r'Filter\s+\d+:\s+ON\s+(LSC|PK|HSC)\s+Fc\s+([0-9.]+)\s+Hz\s+Gain\s+([+-]?[0-9.]+)\s*dB\s+Q\s+([0-9.]+)', peace_text):
-    bands_f64.append(rbj_biquad_f64(m.group(1), float(m.group(2)), float(m.group(3)), float(m.group(4))))
+    gain_db = float(m.group(3))
+    assert gain_db == 0.0, f'Expected 0 dB sample Gain, got {gain_db}'
+    bands_f64.append(rbj_biquad_f64(m.group(1), float(m.group(2)), gain_db, float(m.group(4))))
 assert len(bands_f64) == 11, f'Expected 11 Peace filters, found {len(bands_f64)}'
 
-bands_f32 = [tuple(f32(v) for v in row) for row in bands_f64]
-pre_f64 = 10.0 ** (preamp_db / 20.0)
-pre_f32 = f32(pre_f64)
-max_err_db = 0.0
-for hz in (20.0, 35.0, 50.0, 80.0, 105.0, 140.8, 278.2, 500.0, 934.1, 1349.2, 1473.9, 2077.4, 3500.0, 5122.7, 7470.9, 8000.0, 10000.0, 16000.0, 20000.0):
-    w = 2.0 * math.pi * hz / 48000.0
-    e1 = complex(math.cos(-w), math.sin(-w))
-    e2 = e1 * e1
-    h64 = pre_f64
-    h32 = pre_f32
-    for b0, b1, b2, a1, a2 in bands_f64:
-        h64 *= (b0 + b1 * e1 + b2 * e2) / (1.0 + a1 * e1 + a2 * e2)
-    for b0, b1, b2, a1, a2 in bands_f32:
-        h32 *= (b0 + b1 * e1 + b2 * e2) / (1.0 + a1 * e1 + a2 * e2)
-    err = abs(20.0 * math.log10(abs(h32)) - 20.0 * math.log10(abs(h64)))
-    if err > max_err_db:
-        max_err_db = err
+def check_eq_response_err(pre_db: float, coeffs_f64, freqs) -> float:
+    coeffs_f32 = [tuple(f32(v) for v in row) for row in coeffs_f64]
+    pre_f64 = 10.0 ** (pre_db / 20.0)
+    pre_f32 = f32(pre_f64)
+    worst_err = 0.0
+    for hz in freqs:
+        w = 2.0 * math.pi * hz / 48000.0
+        e1 = complex(math.cos(-w), math.sin(-w))
+        e2 = e1 * e1
+        h64 = pre_f64
+        h32 = pre_f32
+        for b0, b1, b2, a1, a2 in coeffs_f64:
+            h64 *= (b0 + b1 * e1 + b2 * e2) / (1.0 + a1 * e1 + a2 * e2)
+        for b0, b1, b2, a1, a2 in coeffs_f32:
+            h32 *= (b0 + b1 * e1 + b2 * e2) / (1.0 + a1 * e1 + a2 * e2)
+        err = abs(20.0 * math.log10(abs(h32)) - 20.0 * math.log10(abs(h64)))
+        if err > worst_err:
+            worst_err = err
+    return worst_err
+
+sample_freqs = (20.0, 60.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 3000.0, 4000.0, 6000.0, 8000.0, 12000.0, 20000.0)
+max_err_db = check_eq_response_err(preamp_db, bands_f64, sample_freqs)
+synth_bands_f64 = [
+    rbj_biquad_f64('LSC', 100.0, -6.0, 0.7071),
+    rbj_biquad_f64('PK', 1000.0, 3.0, 1.4142),
+    rbj_biquad_f64('HSC', 10000.0, -3.0, 0.7071),
+]
+synth_err_db = check_eq_response_err(-3.0, synth_bands_f64, sample_freqs)
+max_err_db = max(max_err_db, synth_err_db)
 assert max_err_db < 0.01, f'EQ float32 response drifted {max_err_db:.5f} dB'
 
 out = root / 'build-rx-dsp-logic'

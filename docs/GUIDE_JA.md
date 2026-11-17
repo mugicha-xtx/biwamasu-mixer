@@ -9,7 +9,7 @@ Switch 2（ヘッドホン バーチャルサラウンド ON）と PC 音（Disc
 公開版のファームウェアでは、どんなヘッドホンでも安心して使い始められるよう初期状態が以下のように設定されています：
 
 - **初期 EQ 状態**：**OFF（フラット）**  
-  （※ Sony `WH-1000XM6` 用のプリセットを [presets/wh-1000xm6-peace.txt](../presets/wh-1000xm6-peace.txt) に同梱しているので、必要な場合やご自身の Peace ファイルを使う場合に適用できます）
+  （※ 全バンド `0 dB` の記入見本ファイルを [presets/sample-peace.txt](../presets/sample-peace.txt) に同梱しています。お好みの数値に書き換えるか、ご自身の Peace ファイルを指定して適用できます）
 - **初期マスター音量**：**`-40.0 dB`**（高感度なヘッドホン・イヤホンでも突然大音量にならない控えめ設定）
 - **Windows 上での表示名**：
   - 再生デバイス（PC音を混ぜる出力先）：`ヘッドホン (Switch2 Pico Audio Pack Bridge)`
@@ -123,10 +123,10 @@ Switch 2（ヘッドホン バーチャルサラウンド ON）と PC 音（Disc
   ```
 - **Peace 形式 EQ ファイルの読み込み・有効化・保存（最大 11 バンドまで）**：
   ```powershell
-  # 同梱の WH-1000XM6 用サンプル EQ を読み込んで ON にし、本体へ保存する
-  .\scripts\Control-PicoAudioPack.ps1 -PeaceFile .\presets\wh-1000xm6-peace.txt -Eq On -Save
+  # 見本ファイル（presets\sample-peace.txt）や自作の Peace 形式 EQ ファイルを読み込んで ON にし、本体へ保存する
+  .\scripts\Control-PicoAudioPack.ps1 -PeaceFile .\presets\sample-peace.txt -Eq On -Save
   ```
-  （※ ご自身で別のヘッドホン用 `peace.txt` を用意した場合も、同じように `-PeaceFile` で指定できます。EQ を切りたいときは `-Eq Off -Save` を実行してください）
+  （※ 同梱の `sample-peace.txt` は見本のためすべて `0 dB` になっています。お好みの値に編集するか、ご自身のヘッドホン用 `peace.txt` を `-PeaceFile` で指定してください。EQ を切りたいときは `-Eq Off -Save` を実行してください）
 - **Switch 2 音と PC 音の音量バランス調整**：
   ```powershell
   # 例：Switch 2 側を少し下げ（-6 dB）、PC 音を基準より控えめに（-3 dB）して保存

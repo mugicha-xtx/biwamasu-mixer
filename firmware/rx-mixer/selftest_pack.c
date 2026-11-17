@@ -71,8 +71,8 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     CHECK(g_m20 > 0.0999f && g_m20 < 0.1001f);
     float g_m40 = dsp_db_x100_to_linear(-4000);
     CHECK(g_m40 > 0.0099f && g_m40 < 0.0101f);
-    float g_m521 = dsp_db_x100_to_linear(-521);
-    CHECK(g_m521 > 0.5488f && g_m521 < 0.5490f);
+    float g_m12 = dsp_db_x100_to_linear(-1204);
+    CHECK(g_m12 > 0.2499f && g_m12 < 0.2502f);
 
     // 3. Default off/flat/safe -40dB verification + explicit biquad attenuation test
     dsp_mixer_init(m);
@@ -87,9 +87,9 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     CHECK(ul == 0.25f && ur == -0.375f);
 
     const dsp_biquad_coeff_t test_lsc = {
-        9.944633599e-01f, -1.974159463e+00f, 9.798027953e-01f, -1.974049841e+00f, 9.743757775e-01f
+        9.93499733e-01f, -1.97397926e+00f, 9.80564238e-01f, -1.97385289e+00f, 9.74190372e-01f
     };
-    dsp_eq_set_preamp(eq, 0.5489085556f);
+    dsp_eq_set_preamp(eq, 0.5f);
     dsp_eq_set_band(eq, 0u, &test_lsc);
 
     float peak_eq_low = 0.0f;
