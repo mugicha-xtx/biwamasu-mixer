@@ -1,4 +1,4 @@
-# 組み立て・使い方ガイド（Pico Audio Pack 版）
+# Biwamasu Mixer — 組み立て・使い方ガイド（Pico Audio Pack 版）
 
 Switch 2（ヘッドホン バーチャルサラウンド ON）と PC 音（Discord・ブラウザ等）を、Windows のミキサーを通さずに **PC 側 Pico② 内部でデジタル合成 → Pimoroni Pico Audio Pack へ直接再生（Switch 2 音声遅延 約 4.6〜4.9 ms）** しつつ、**OBS には無加工の生音** を送る手順です。
 
@@ -12,8 +12,9 @@ Switch 2（ヘッドホン バーチャルサラウンド ON）と PC 音（Disc
   （※ 全バンド `0 dB` の記入見本ファイルを [presets/sample-peace.txt](../presets/sample-peace.txt) に同梱しています。お好みの数値に書き換えるか、ご自身の Peace ファイルを指定して適用できます）
 - **初期マスター音量**：**`-40.0 dB`**（高感度なヘッドホン・イヤホンでも突然大音量にならない控えめ設定）
 - **Windows 上での表示名**：
-  - 再生デバイス（PC音を混ぜる出力先）：`ヘッドホン (Switch2 Pico Audio Pack Bridge)`
-  - 録音デバイス（OBS に生音を入れる入力元）：`マイク (Switch2 Pico Audio Pack Bridge)`
+  - 再生デバイス（PC音を混ぜる出力先）：`ヘッドホン (Biwamasu Mixer)`
+  - 録音デバイス（OBS に生音を入れる入力元）：`マイク (Biwamasu Mixer)`
+  - Switch 2 側の USB 出力表示：`Biwamasu Mixer TX`
 
 ---
 
@@ -102,13 +103,13 @@ Switch 2（ヘッドホン バーチャルサラウンド ON）と PC 音（Disc
 ## 5. Windows と OBS の設定
 
 ### Windows の再生（PC 音も一緒に聴く）
-- Windows 右下のスピーカーアイコン → 出力先を **`ヘッドホン (Switch2 Pico Audio Pack Bridge)`** に切り替えます。
+- Windows 右下のスピーカーアイコン → 出力先を **`ヘッドホン (Biwamasu Mixer)`** に切り替えます。
 - Windows の音量スライダーを動かすと **PC 側の音量だけ** 変わり、Switch 2 の音量には影響しません。
 - ※ ヘッドホン用 EQ は `Pico②` 内部で行うため、Windows の **Equalizer APO / Peace はこの出力デバイスに掛けないでください**。
 
 ### OBS の録音（Switch 2 生音を取り込む）
-- OBS「ソース」→ `＋` →「音声入力キャプチャ」→ デバイスに **`マイク (Switch2 Pico Audio Pack Bridge)`** を選択します（映像側と音がわずかにズレる場合は OBS の「オーディオの詳細プロパティ」→「同期オフセット」で映像に合わせて微調整してください）。
-- **推奨 Windows マイク設定**：Windows「設定」→「システム」→「サウンド」→「入力」→ `マイク (Switch2 Pico Audio Pack Bridge)` を開き、**入力音量を `100`（上限 `0.0 dB` 設定のため増幅なしの等倍になります）**、**「オーディオの強化」を「オフ」** にしておくと、Switch 2 から来たデジタル音声が 1bit も加工されず OBS に届きます。
+- OBS「ソース」→ `＋` →「音声入力キャプチャ」→ デバイスに **`マイク (Biwamasu Mixer)`** を選択します（映像側と音がわずかにズレる場合は OBS の「オーディオの詳細プロパティ」→「同期オフセット」で映像に合わせて微調整してください）。
+- **推奨 Windows マイク設定**：Windows「設定」→「システム」→「サウンド」→「入力」→ `マイク (Biwamasu Mixer)` を開き、**入力音量を `100`（上限 `0.0 dB` 設定のため増幅なしの等倍になります）**、**「オーディオの強化」を「オフ」** にしておくと、Switch 2 から来たデジタル音声が 1bit も加工されず OBS に届きます。
 
 ---
 

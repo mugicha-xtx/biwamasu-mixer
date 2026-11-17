@@ -37,7 +37,7 @@ PID を申請するには、まずこのプロジェクトのソースコード�
 
 #### 申請フォームにそのまま使える英文説明テンプレート
 ```text
-Project: Switch2 Pico Audio Pack Bridge (Open-source MIT hardware/firmware project)
+Project: Biwamasu Mixer / Switch2 Pico Audio Pack Bridge (Open-source MIT hardware/firmware project)
 Repository: https://github.com/mugicha-xtx/switch2-pico-audio-pack-bridge
 MCU: 2x Raspberry Pi Pico 2 H (RP2350, PICO_BOARD=pico2)
 

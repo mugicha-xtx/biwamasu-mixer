@@ -16,7 +16,7 @@ const tusb_desc_device_t pack_device_descriptor = {
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor = PACK_VID,
     .idProduct = PACK_PID,
-    .bcdDevice = 0x0101,
+    .bcdDevice = 0x0102,
     .iManufacturer = 1,
     .iProduct = 2,
     .iSerialNumber = 3,
@@ -121,12 +121,12 @@ const uint16_t *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     static char serial[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
     const char *strings[] = {
         NULL,
-        "Personal Audio Lab",
-        "Switch2 Pico Audio Pack Bridge",
+        "mugicha_xtx",
+        "Biwamasu Mixer",
         serial,
-        "Switch2 PC Mix Output",
-        "Switch2 Raw Capture",
-        "Switch2 Audio Pack HID"
+        "Biwamasu Mix Out",
+        "Biwamasu Capture",
+        "Biwamasu Mixer HID"
     };
     if (!index) {
         out[0] = 0x0304;

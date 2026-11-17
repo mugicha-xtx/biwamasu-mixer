@@ -3,6 +3,7 @@
 #include <string.h>
 #include <limits.h>
 #include "pico/stdlib.h"
+#include "pico/bootrom.h"
 #include "pico/rand.h"
 #include "hardware/sync.h"
 #include "hardware/uart.h"
@@ -28,6 +29,7 @@ static uint8_t wire[2][256];
 static unsigned wire_size[2];
 static bridge_pcm_t ready_meta;
 static uint32_t dma_started;
+static uint32_t boot_requested = 0;
 static bool end_sent;
 
 static void transition(uint8_t state,uint16_t reason) {
@@ -150,12 +152,19 @@ uint16_t tud_hid_get_report_cb(uint8_t itf,uint8_t id,hid_report_type_t type,uin
  for(unsigned i=0;i<5;i++) bridge_put32(r+40+4*i,x.tx_age_buckets[i]);
  len=TU_MIN(len,63); memcpy(out,r,len); return len;
 }
-void tud_hid_set_report_cb(uint8_t itf,uint8_t id,hid_report_type_t type,const uint8_t *b,uint16_t len) { (void)itf;(void)id;(void)type;(void)b;(void)len; }
+void tud_hid_set_report_cb(uint8_t itf,uint8_t id,hid_report_type_t type,const uint8_t *b,uint16_t len) {
+ (void)itf;
+ if(!id && type==HID_REPORT_TYPE_FEATURE && len>=1u && b[0]==0x7fu) boot_requested=time_us_32();
+}
 #endif
 int main(void) {
  s.session=get_rand_64(); if(!s.session) s.session=1;
  channel=dma_claim_unused_channel(true); uart_setup();
  const tusb_rhport_init_t init={.role=TUSB_ROLE_DEVICE,.speed=TUSB_SPEED_FULL}; tusb_init(0,&init);
  uint32_t previous=time_us_32(); last_status=previous-100000;
- while(true) { uint32_t now=time_us_32(),elapsed=now-previous; previous=now; if(elapsed>s.loop_max) s.loop_max=elapsed; pump(); tud_task(); }
+ while(true) {
+  uint32_t now=time_us_32(),elapsed=now-previous; previous=now; if(elapsed>s.loop_max) s.loop_max=elapsed;
+  pump(); tud_task();
+  if(boot_requested && (uint32_t)(time_us_32()-boot_requested)>25000u) reset_usb_boot(0,0);
+ }
 }

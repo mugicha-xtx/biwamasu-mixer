@@ -10,7 +10,7 @@ const tusb_desc_device_t probe_device_descriptor = {
     .bLength = sizeof(tusb_desc_device_t), .bDescriptorType = TUSB_DESC_DEVICE,
     .bcdUSB = 0x0200, .bDeviceClass = 0, .bDeviceSubClass = 0, .bDeviceProtocol = 0,
     .bMaxPacketSize0 = 64, .idVendor = (uint16_t)USB_VID,
-    .idProduct = (uint16_t)BRIDGE_USB_PID, .bcdDevice = 0x0001,
+    .idProduct = (uint16_t)BRIDGE_USB_PID, .bcdDevice = 0x0002,
     .iManufacturer = 1, .iProduct = 2, .iSerialNumber = 3, .bNumConfigurations = 1
 };
 
@@ -52,7 +52,7 @@ const uint16_t *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     (void)langid;
     static uint16_t out[40];
     static char serial[PICO_UNIQUE_BOARD_ID_SIZE_BYTES * 2 + 1];
-    const char *strings[] = {NULL, "Personal Audio Lab", PROBE_HID ? "Switch2 Audio Probe HID" : "Switch2 Audio Probe", serial, "UAC1 Headphones"};
+    const char *strings[] = {NULL, "mugicha_xtx", "Biwamasu Mixer TX", serial, "Biwamasu Mixer TX"};
     if (!index) { out[0] = 0x0304; out[1] = 0x0409; return out; }
     if (index >= TU_ARRAY_SIZE(strings)) return NULL;
     if (index == 3) pico_get_unique_board_id_string(serial, sizeof(serial));

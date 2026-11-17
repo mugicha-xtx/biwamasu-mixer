@@ -6,7 +6,7 @@
 
   <!-- Title Banner -->
   <text x="560" y="36" text-anchor="middle" font-size="20" font-weight="bold" fill="#0f172a">
-    Switch2 Pico Audio Pack Bridge — Hardware Interconnect Schematic (MIT License)
+    Biwamasu Mixer (Switch2 Pico Audio Pack Bridge) — Hardware Interconnect Schematic (MIT License)
   </text>
   <text x="560" y="58" text-anchor="middle" font-size="13" fill="#475569">
     Dual Raspberry Pi Pico 2 H (RP2350) + 33-ohm Isolated 3 Mbps UART Link + Pimoroni Pico Audio Pack (PCM5100A / PAM8908)
