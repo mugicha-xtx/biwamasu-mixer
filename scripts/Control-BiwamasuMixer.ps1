@@ -128,60 +128,121 @@ if (-not ('AudioPackHid' -as [type])) {
     Add-Type -TypeDefinition $csharpSource -Language CSharp
 }
 
+function New-BiquadFromSpec([string]$kind, [double]$fc, [double]$gdb, [double]$q, [string]$srcDesc) {
+    if ($fc -lt 10.0 -or $fc -gt 23500.0 -or $q -le 0.05) {
+        throw "Out-of-range filter parameter in $srcDesc"
+    }
+    $fs = 48000.0
+    $A = [Math]::Pow(10.0, $gdb / 40.0)
+    $w0 = 2.0 * [Math]::PI * $fc / $fs
+    $cw = [Math]::Cos($w0)
+    $sw = [Math]::Sin($w0)
+    $alpha = $sw / (2.0 * $q)
+    if ($kind -eq 'PK' -or $kind -eq 'PEQ') {
+        $b0 = 1.0 + $alpha * $A; $b1 = -2.0 * $cw; $b2 = 1.0 - $alpha * $A
+        $a0 = 1.0 + $alpha / $A; $a1 = -2.0 * $cw; $a2 = 1.0 - $alpha / $A
+    } elseif ($kind -eq 'LSC' -or $kind -eq 'LS') {
+        $sa = 2.0 * [Math]::Sqrt($A) * $alpha
+        $b0 = $A * (($A + 1.0) - ($A - 1.0) * $cw + $sa)
+        $b1 = 2.0 * $A * (($A - 1.0) - ($A + 1.0) * $cw)
+        $b2 = $A * (($A + 1.0) - ($A - 1.0) * $cw - $sa)
+        $a0 = ($A + 1.0) + ($A - 1.0) * $cw + $sa
+        $a1 = -2.0 * (($A - 1.0) + ($A + 1.0) * $cw)
+        $a2 = ($A + 1.0) + ($A - 1.0) * $cw - $sa
+    } else {
+        $sa = 2.0 * [Math]::Sqrt($A) * $alpha
+        $b0 = $A * (($A + 1.0) + ($A - 1.0) * $cw + $sa)
+        $b1 = -2.0 * $A * (($A - 1.0) + ($A + 1.0) * $cw)
+        $b2 = $A * (($A + 1.0) + ($A - 1.0) * $cw - $sa)
+        $a0 = ($A + 1.0) - ($A - 1.0) * $cw + $sa
+        $a1 = 2.0 * (($A - 1.0) - ($A + 1.0) * $cw)
+        $a2 = ($A + 1.0) - ($A - 1.0) * $cw - $sa
+    }
+    $nb0 = [single]($b0 / $a0); $nb1 = [single]($b1 / $a0); $nb2 = [single]($b2 / $a0)
+    $na1 = [single]($a1 / $a0); $na2 = [single]($a2 / $a0)
+    if ([Math]::Abs($na2) -ge 1.0 -or (1.0 + $na2) -le [Math]::Abs($na1)) {
+        throw "Unstable biquad generated from $srcDesc"
+    }
+    return [single[]]@($nb0, $nb1, $nb2, $na1, $na2)
+}
+
 function Parse-PeaceFilters {
     param([string]$Path)
     if (!(Test-Path -LiteralPath $Path)) { throw "Peace file not found: $Path" }
-    $lines = Get-Content -LiteralPath $Path
-    $preampDb = 0.0
-    $bands = @()
+    $lines = Get-Content -Encoding UTF8 -LiteralPath $Path
+    $isIni = $Path.EndsWith('.peace', [StringComparison]::OrdinalIgnoreCase)
     foreach ($line in $lines) {
-        if ($line -match '^\s*Preamp:\s*([+-]?\d+(?:\.\d+)?)\s*dB') {
-            $preampDb = [double]$matches[1]
+        if ($line -match '^\s*FilterCurve:') {
+            throw 'This file is an Audacity FilterCurve export. Do not click Export in Peace; load your .peace preset or peace.txt directly from C:\Program Files\EqualizerAPO\config.'
         }
-        elseif ($line -match '^\s*Filter\s+\d+:\s*ON\s+(PK|PEQ|LSC|LS|HSC|HS)\s+Fc\s+([0-9.]+)\s*Hz\s+Gain\s+([+-]?[0-9.]+)\s*dB(?:\s+Q\s+([0-9.]+))?') {
-            $kind = $matches[1]
-            $fc = [double]$matches[2]
-            $gdb = [double]$matches[3]
-            $q = if ($matches[4]) { [double]$matches[4] } else { 0.70710678 }
-            if ($fc -lt 10.0 -or $fc -gt 23500.0 -or $q -le 0.05) {
-                throw "Out-of-range Peace filter parameter in line: $line"
+        if ($line -match '^\s*\[(Frequencies|General)\]\s*$') { $isIni = $true }
+    }
+
+    $preampDb = 0.0
+    $specs = @()
+    if ($isIni) {
+        $sec = ''
+        $freqs = @{}; $gains = @{}; $quals = @{}; $filts = @{}; $dis = @{}
+        foreach ($line in $lines) {
+            $t = $line.Trim()
+            if (!$t -or $t.StartsWith(';') -or $t.StartsWith('#')) { continue }
+            if ($t -match '^\[([^\]]+)\]$') { $sec = $matches[1].Trim(); continue }
+            if ($sec -ieq 'General' -and $t -match '^PreAmp\s*=\s*([+-]?\d+(?:\.\d+)?)$') {
+                $preampDb = [double]$matches[1]
+            } elseif ($sec -ieq 'Frequencies' -and $t -match '^Frequency(\d+)\s*=\s*([0-9.]+)$') {
+                $freqs[[int]$matches[1]] = [double]$matches[2]
+            } elseif ($sec -ieq 'Gains' -and $t -match '^Gain(\d+)\s*=\s*([+-]?[0-9.]+)$') {
+                $gains[[int]$matches[1]] = [double]$matches[2]
+            } elseif ($sec -ieq 'Qualities' -and $t -match '^Quality(\d+)\s*=\s*([0-9.]+)$') {
+                $quals[[int]$matches[1]] = [double]$matches[2]
+            } elseif ($sec -ieq 'Filters' -and $t -match '^Filter(\d+)\s*=\s*([+-]?\d+)$') {
+                $filts[[int]$matches[1]] = [int]$matches[2]
+            } elseif ($sec -ieq 'Disabled' -and $t -match '^Disabled(\d+)\s*=\s*(\d+)$') {
+                if ([int]$matches[2] -ne 0) { $dis[[int]$matches[1]] = $true }
             }
-            $fs = 48000.0
-            $A = [Math]::Pow(10.0, $gdb / 40.0)
-            $w0 = 2.0 * [Math]::PI * $fc / $fs
-            $cw = [Math]::Cos($w0)
-            $sw = [Math]::Sin($w0)
-            $alpha = $sw / (2.0 * $q)
-            if ($kind -eq 'PK' -or $kind -eq 'PEQ') {
-                $b0 = 1.0 + $alpha * $A; $b1 = -2.0 * $cw; $b2 = 1.0 - $alpha * $A
-                $a0 = 1.0 + $alpha / $A; $a1 = -2.0 * $cw; $a2 = 1.0 - $alpha / $A
-            } elseif ($kind -eq 'LSC' -or $kind -eq 'LS') {
-                $sa = 2.0 * [Math]::Sqrt($A) * $alpha
-                $b0 = $A * (($A + 1.0) - ($A - 1.0) * $cw + $sa)
-                $b1 = 2.0 * $A * (($A - 1.0) - ($A + 1.0) * $cw)
-                $b2 = $A * (($A + 1.0) - ($A - 1.0) * $cw - $sa)
-                $a0 = ($A + 1.0) + ($A - 1.0) * $cw + $sa
-                $a1 = -2.0 * (($A - 1.0) + ($A + 1.0) * $cw)
-                $a2 = ($A + 1.0) + ($A - 1.0) * $cw - $sa
-            } else {
-                $sa = 2.0 * [Math]::Sqrt($A) * $alpha
-                $b0 = $A * (($A + 1.0) + ($A - 1.0) * $cw + $sa)
-                $b1 = -2.0 * $A * (($A - 1.0) + ($A + 1.0) * $cw)
-                $b2 = $A * (($A + 1.0) + ($A - 1.0) * $cw - $sa)
-                $a0 = ($A + 1.0) - ($A - 1.0) * $cw + $sa
-                $a1 = 2.0 * (($A - 1.0) - ($A + 1.0) * $cw)
-                $a2 = ($A + 1.0) - ($A - 1.0) * $cw - $sa
+        }
+        foreach ($slot in ($freqs.Keys | Sort-Object)) {
+            $fc = $freqs[$slot]
+            $gdb = if ($gains.ContainsKey($slot)) { $gains[$slot] } else { 0.0 }
+            $fcode = if ($filts.ContainsKey($slot)) { $filts[$slot] } else { 0 }
+            if ($dis.ContainsKey($slot) -or $fcode -lt 0) { continue }
+            $kind = if ($fcode -eq 0) { 'PK' }
+                elseif ($fcode -in @(4, 8, 14, 16)) { 'LSC' }
+                elseif ($fcode -in @(5, 9, 15, 17)) { 'HSC' }
+                elseif ([Math]::Abs($gdb) -lt 0.001) { continue }
+                else { throw "Unsupported Peace filter code $fcode on slider $slot" }
+            $defQ = if ($kind -eq 'PK') { 1.41 } else { 0.70710678 }
+            $q = if ($quals.ContainsKey($slot)) { $quals[$slot] } else { $defQ }
+            if (($fcode -eq 8 -or $fcode -eq 9) -and $q -gt 3.0) { $q = 0.70710678 }
+            $specs += [PSCustomObject]@{ Kind = $kind; Fc = $fc; Gain = $gdb; Q = $q; Desc = "Slider $slot" }
+        }
+    } else {
+        foreach ($line in $lines) {
+            if ($line -match '^\s*Preamp:\s*([+-]?\d+(?:\.\d+)?)\s*dB') {
+                $preampDb = [double]$matches[1]
+            } elseif ($line -match '^\s*Filter\s+\d+:\s*ON\s+(PK|PEQ|LSC|LS|HSC|HS)\s+Fc\s+([0-9.]+)\s*Hz\s+Gain\s+([+-]?[0-9.]+)\s*dB(?:\s+Q\s+([0-9.]+))?') {
+                $kind = $matches[1].ToUpperInvariant()
+                $fc = [double]$matches[2]
+                $gdb = [double]$matches[3]
+                $defQ = if ($kind -eq 'PK' -or $kind -eq 'PEQ') { 1.41 } else { 0.70710678 }
+                $q = if ($matches[4]) { [double]$matches[4] } else { $defQ }
+                $specs += [PSCustomObject]@{ Kind = $kind; Fc = $fc; Gain = $gdb; Q = $q; Desc = $line.Trim() }
             }
-            $nb0 = [single]($b0 / $a0); $nb1 = [single]($b1 / $a0); $nb2 = [single]($b2 / $a0)
-            $na1 = [single]($a1 / $a0); $na2 = [single]($a2 / $a0)
-            if ([Math]::Abs($na2) -ge 1.0 -or (1.0 + $na2) -le [Math]::Abs($na1)) {
-                throw "Unstable biquad generated from line: $line"
-            }
-            $bands += ,([single[]]@($nb0, $nb1, $nb2, $na1, $na2))
         }
     }
-    if ($bands.Count -eq 0) { throw "No active PK/LSC/HSC filters found in $Path" }
-    if ($bands.Count -gt 11) { throw "Found $($bands.Count) filters, maximum supported is 11" }
+
+    if ($specs.Count -eq 0) { throw "No active PK/LSC/HSC filters found in $Path" }
+    if ($specs.Count -gt 11) {
+        $nonZero = @($specs | Where-Object { [Math]::Abs($_.Gain) -gt 0.001 })
+        $zeros   = @($specs | Where-Object { [Math]::Abs($_.Gain) -le 0.001 })
+        if ($nonZero.Count -gt 11) { throw "Found $($nonZero.Count) non-zero filters, maximum supported is 11" }
+        $specs = @($nonZero + $zeros) | Select-Object -First 11
+    }
+
+    $bands = @()
+    foreach ($s in $specs) {
+        $bands += ,(New-BiquadFromSpec $s.Kind $s.Fc $s.Gain $s.Q $s.Desc)
+    }
     while ($bands.Count -lt 11) {
         $bands += ,([single[]]@(1.0, 0.0, 0.0, 0.0, 0.0))
     }

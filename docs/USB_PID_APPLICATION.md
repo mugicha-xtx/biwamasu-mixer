@@ -83,25 +83,29 @@ PID が正式に割り当てられたら（例：`USB_VID = 0x2e8a`、`BRIDGE_US
 完了すると `dist/` フォルダ内に以下のファイルが生成されます：
 - `dist/biwamasu-mixer-tx.uf2`（Switch 2 側 `Pico①` 用）
 - `dist/biwamasu-mixer-rx.uf2`（PC 側 `Pico②` 用）
-- `dist/biwamasu-mixer-release.zip`（GitHub Releases 配布用アーカイブ。UF2・操作スクリプト・設定見本・README・配線画像・ライセンス一式を自動同梱）
+- `dist/Biwamasu-Mixer Setting tool.exe`（Windows 標準 GUI 設定ツール）
+- `dist/biwamasu-mixer-release.zip`（GitHub Releases 配布用アーカイブ。UF2・GUIソフト・操作スクリプト・設定見本・README・配線画像・ライセンス一式を自動同梱）
 
 ### GitHub Releases へ公開するときに必ず同梱するもの
 `THIRD_PARTY_NOTICES.md` のライセンス条件を満たすため、2 つの `.uf2` ファイルと一緒に以下のファイルを必ず同梱（生成された `dist/biwamasu-mixer-release.zip` をそのままアップロードすればすべて含まれます）してください：
 - `LICENSE`
 - `THIRD_PARTY_NOTICES.md`
-- `licenses/` フォルダ内の全テキストファイル（4 ファイル）
+- `licenses/` フォルダ内の全テキストファイル（5 ファイル）
 
 ---
 
 ## 補足：自分の手元の実機やローカル開発テストについて
 
-PID 申請前のローカル環境だけでビルドや制御スクリプトの動作をテストしたい場合は、コマンドに `-DevTestIds` を付けて実行できます（※ 生成されたテスト用 `.uf2` / `biwamasu-mixer-dev-do-not-distribute.zip` は他人に配布しないでください）：
+PID 申請前のローカル環境だけでビルドや制御ツール・スクリプトの動作をテストしたい場合は、コマンドに `-DevTestIds` を付けて実行できます（※ 生成されたテスト用 `.uf2` / `.exe` / `biwamasu-mixer-dev-do-not-distribute.zip` は他人に配布しないでください）：
 
 ```powershell
 # ローカル検証専用の仮 ID (0xCAFE) ビルド（公開配布禁止）
 .\scripts\Build-Release.ps1 -DevTestIds
 
-# すでに手元で 0xCAFE 版が動いている Pico② を操作する場合
+# GUI 設定ツール単体を仮 ID でビルドする場合
+.\scripts\Build-Gui.ps1 -DevTestIds
+
+# すでに手元で 0xCAFE 版が動いている Pico② をコマンドから操作する場合
 .\scripts\Control-BiwamasuMixer.ps1 -DevTestIds
 ```
 

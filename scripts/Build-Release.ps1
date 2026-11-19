@@ -169,8 +169,15 @@ try {
 
     $txUf2 = Join-Path $distDir 'biwamasu-mixer-tx.uf2'
     $rxUf2 = Join-Path $distDir 'biwamasu-mixer-rx.uf2'
+    $guiExe = Join-Path $distDir 'Biwamasu-Mixer Setting tool.exe'
     Copy-Item -LiteralPath "$txBin/switch2_usb_bridge.uf2" -Destination $txUf2 -Force
     Copy-Item -LiteralPath "$rxBin/pico_audio_pack.uf2"    -Destination $rxUf2 -Force
+
+    Write-Host 'Building Biwamasu-Mixer Setting tool.exe Windows GUI...'
+    & (Join-Path $root 'scripts/Build-Gui.ps1') `
+        -UsbVid ('0x{0:x4}' -f $effVid) `
+        -MixerPid ('0x{0:x4}' -f $effMixerPid) `
+        -OutPath $guiExe
 
     # Package self-contained GitHub Releases archive
     $bundleRoot = Join-Path $distDir 'bundle'
@@ -181,7 +188,7 @@ try {
     foreach ($sub in @('scripts', 'include', 'presets', 'images', 'hardware', 'licenses')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $bundleDir $sub) | Out-Null
     }
-    Copy-Item -LiteralPath $txUf2, $rxUf2, (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $bundleDir -Force
+    Copy-Item -LiteralPath $txUf2, $rxUf2, $guiExe, (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $bundleDir -Force
     Copy-Item -LiteralPath (Join-Path $root 'scripts/Control-BiwamasuMixer.ps1') -Destination (Join-Path $bundleDir 'scripts') -Force
     Copy-Item -LiteralPath (Join-Path $root 'presets/sample-peace.txt') -Destination (Join-Path $bundleDir 'presets') -Force
     Get-ChildItem -LiteralPath (Join-Path $root 'images') -Filter '*.jpg' -File |
@@ -206,7 +213,7 @@ try {
         Write-Warning 'Built with -DevTestIds (0xCAFE test IDs). Do NOT distribute these UF2 binaries or dev ZIP publicly.'
     }
 
-    Get-FileHash -LiteralPath $txUf2, $rxUf2, $zipPath -Algorithm SHA256 |
+    Get-FileHash -LiteralPath $txUf2, $rxUf2, $guiExe, $zipPath -Algorithm SHA256 |
         Format-Table -AutoSize
 } finally {
     $env:PATH = $oldPath

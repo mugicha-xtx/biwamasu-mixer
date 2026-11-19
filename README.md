@@ -37,7 +37,7 @@
 2. Pimoroni Pico Audio Pack（型番：PIM544） × 1個
   - DACとアンプが内蔵された音声出力ボードです。
   - 普通のイヤホンやゲーミングヘッドセットなど、鳴らしやすい機種なら問題なく動かせますが、小型基板なのでアンプの出力は控えめです。高い出力を要求する一部のヘッドホンでは、音量が足りない場合があります。
-  - 基板についている小さいスイッチ（ゲイン切り替え）はまずは「Low」側にしておきましょう。
+  - 基板についている小さいスイッチ（ゲイン切り替え）はまずは「LO GAIN」側にしておきましょう。
 3. ブレッドボード（800穴サイズくらい） × 1枚
   - 部品を挿すだけで回路を導通させられる魔法の白い板です。
   - 800穴くらいのサイズのものを使えば2台のPicoを余裕を持って乗せられます。ぼくはMB-102を使いました。
@@ -112,7 +112,8 @@ Pico②のピンが刺さっているブレッドボードの列から、ジャ�
 次はPico①とPico②の両方にファームウェアを書き込んでいきます。
 
 1. GitHub Releasesからファイルをダウンロードする
-  - このGitHubページの右側にある `Releases` 欄から最新の配布用ZIPファイル（`biwamasu-mixer-release.zip`）をダウンロードして、PCの適当なフォルダに解凍（展開）してください（※緑色の「Code → Download ZIP」はソースコード用なので `.uf2` ファイルは入っていません）。
+  - このGitHubページの右側にある `Releases` 欄から最新の配布用ZIPファイル（`biwamasu-mixer-release.zip`）をダウンロードして、PCの適当なフォルダに解凍（展開）してください（※緑色の「Code → Download ZIP」はソースコード用なので `.uf2` や `.exe` ファイルは入っていません）。
+  - 💡 **解凍前のワンポイント**：ダウンロードした `.zip` を解凍する前に、`.zip` ファイルを右クリック →「プロパティ」→ 右下のセキュリティ欄「**許可する**」にチェックを入れて「OK」を押してから解凍すると、中の `.exe` やスクリプトを開くときに Windows の保護確認画面が出なくなります。
 2. Pico①（Switch2側）への書き込み
   - USBメモリにファイルを入れるのと同じ要領で書き込めます。
   - Pico①基板の上にある白い小さなボタン（BOOTSELボタン）を押しながら、PCにUSBケーブルで繋ぎます。
@@ -136,18 +137,65 @@ Switch 2本体の音量をMAXにして使う仕組みなので、音量設定が
 - Switch2の設定から「ヘッドホン バーチャルサラウンド」をONにし、「ヘッドホンの最大音量を下げる」をOFFにし、Switch2本体の音量設定をMAX（最大） まで上げましょう。（S/N比を稼ぐのと、OBSに最大音量の音を送るため）
 
 ### 音量とイコライザー（EQ）の設定
-解凍したフォルダに入っている `Control-BiwamasuMixer.ps1`（PowerShellスクリプト）を使います。
-（※ネットで落としたスクリプトがWindowsにブロックされる場合は、ファイルを右クリック→「プロパティ」→右下の「許可する」にチェックを入れてOKを押してください）
+解凍したフォルダに入っている **`Biwamasu-Mixer Setting tool.exe`（内部設定変更用のWindowsソフト）** をダブルクリックして起動します（コマンド操作が好きな人は `scripts\Control-BiwamasuMixer.ps1` でも同じ操作ができます）。
+（※初回起動時に青い画面「**WindowsによってPCが保護されました**（Microsoft Defender SmartScreen）」が出た場合は、企業向けの有料電子署名がない個人制作ソフトに対して出るWindows標準の確認画面です。文章の下にある「**詳細情報**」をクリック → 右下に現れる「**実行**」ボタンを押すと開けます。2回目以降は出ません。スクリプトを使う場合でブロックされたときは、ファイルを右クリック→「プロパティ」→右下の「許可する」にチェックを入れてOKを押してください）
 
-このスクリプトから以下の設定ができます。
+この設定ソフト（またはスクリプト）から以下の設定ができます。
 - 全体の音量調整（MasterDb）：僕の環境（Sony WH-1000XM6 電源ON 有線接続）では、-45dBくらいでちょうどいい音量になりました。
 - 初期設定は-45dBにしてあるので、まずは小さめの音量から試して確認して、音量調節してください。
 - 0dBまで上げても音が小さい場合は、Pico Audio PackのゲインスイッチをHI GAINに切り替えてみてください。音量が大きくなります。
-- EQの読み込み：普段 Equalizer APO（Peace）を使っている人は、書き出した `peace.txt` を読み込ませるだけで、マイコン側でSwitch2音とPC音の両方に同じパラメトリックEQがそのままかかります（※PC側でもPeace等をONにしていると二重にEQがかかってしまうので、PC側のEQソフトはOFFにしてください）。違うイコライザを使ってる人は、がんばって自分で数値を入力するか、AIにイコライザの数値を教えて入力してもらってください。
+- EQの読み込み：普段 Equalizer APO（Peace）を使っている人は、`peace.txt`（または `.peace` ファイル）を読み込ませるだけで、マイコン側でSwitch2音とPC音の両方に同じパラメトリックEQがそのままかかります（※PC側のEQソフトも「Biwamasu Mixer」に掛かっていると二重にEQがかかってしまうので、PC側のEQソフトをOFFにするか、このミキサーには掛からないようにしておいてください）。違うイコライザを使ってる人は、がんばって自分で数値を入力するか、AIにイコライザの数値を教えて入力してもらってください。
 - 本体への保存：設定をフラッシュメモリに保存すれば、次回からはPCやUSBを抜き差ししても設定が自動で復元されます。
 
-#### 💡 コピペ用：`Control-BiwamasuMixer.ps1` 実行コマンド例（AIによる補足）
-展開したフォルダ（`README.md` と同じ階層）で PowerShell を開き、以下のコマンドを実行します。
+#### 💡 設定ツール（`Biwamasu-Mixer Setting tool.exe`）とコマンドの補足（AIによる補足）
+- **`Biwamasu-Mixer Setting tool.exe` の仕様（常駐不要・設定変更時のみ起動すればOK）**：
+  - **各項目の詳しいヘルプ**：画面上部の **`ヘルプ(H) → 使い方・各項目ガイド`**（または `F1` キー）から、すべての項目・用語の詳しい解説を確認できます。
+  - **スライダーの赤色ゾーンと音割れ検知**：マスター音量と各補正（Switch 2 / PC）の合計が `+0.0 dB` を超える区間は赤く表示されます。デジタル上で `0 dB` を超えて増幅するとS/N比の悪化や音割れの原因になるため、`0 dB` 以下での使用を推奨します（音量が足りない場合は基板スイッチを `HI GAIN` に切り替えてください）。また、再生中に実際のデジタル音割れ（クリッピング）が発生した場合は自動で検知して警告を表示します。
+  - **Equalizer APO（Peace）設定の読み込み方**：**Peace画面の「エクスポート」ボタンを押す必要はありません**（Peaceのエクスポート機能は Audacity 専用形式のため非対応です）。`[ファイル読込...]` ボタンを押し、`C:\Program Files\EqualizerAPO\config` フォルダ内にある **`<プリセット名>.peace` または `peace.txt` をそのまま選択** するか、ファイルをウィンドウへ直接 **ドラッグ＆ドロップ** してください。
+  - **AutoEQ（Webサイト）からの読み込み方**：公開データベースの [autoeq.app](https://autoeq.app) で手持ちのイヤホン・ヘッドホン名を検索し、アプリ選択欄（Select equalizer app）で **`EqualizerAPO ParametricEq`** を選んでダウンロードした `.txt` ファイルも、`[ファイル読込...]` またはドラッグ＆ドロップで無変換で読み込めます。
+  - **AIでのEQ作成・直接貼り付け（メモ帳保存不要）**：**`[AI・テキスト貼付...]`** ボタンを押すと、AIへの依頼文（プロンプト）をワンクリックでコピーでき、AIの回答をそのまま貼り付けて（またはメイン画面で `Ctrl+V` を押して）即座に適用できます。
+  - **お気に入り設定（複数機器・ゲームごとの一括切替）**：上部メニューの **`お気に入り(P)`** から、「現在の音量バランス＋EQ設定」をセットで名前保存し、1クリックで切り替えられます。
+  - **イコライザー詳細設定**：`[詳細設定...]` から周波数特性グラフを見ながら最大11バンド（標準は `100Hz` ローシェルフ〜`10000Hz` ハイシェルフ構成）を調整できます。補正・EQスライダーはダブルクリックで `0.0 dB` に戻り、`[自動調整]` で音割れ防止用のマイナスプリアンプを自動計算できます。
+  - **本体への保存**：調整後は右下の **`[本体に保存]`** を押すと `Pico②` のフラッシュメモリに記憶されます（保存後はソフトを閉じてしまって構いません）。
+  - **ソースコードからの自作も可能**：`.exe` の中身は [host-gui/BiwamasuMixerGui.cs](host-gui/BiwamasuMixerGui.cs) の1ファイルのみで、外部通信や常駐処理は一切ありません。Windows 標準搭載のコンパイラだけで `.\scripts\Build-Gui.ps1` から自分のPC上で同じ `.exe` をビルドすることもできます。
+
+#### 🤖 Peaceを使っていない人向け：AIにイコライザー設定を作ってもらう方法（AIによる補足）
+普段ゲーミングヘッドセットの専用ソフト（Logicool G HUB / Razer Synapse / SteelSeries Sonar 等）やスマホアプリのイコライザーを使っている場合や、「このイヤホンで足音や声を聞きやすくしたい」といった要望がある場合は、メモ帳でファイルを作る必要すらありません。
+
+1. **`Biwamasu-Mixer Setting tool.exe` の `[AI・テキスト貼付...]` ボタンを押す**
+   - 画面上部の **`[AIへの依頼文をコピー]`** ボタンを押して、ChatGPT / Claude / Gemini 等に貼り付けます（他ソフトのEQ画面のスクリーンショットを一緒に添付してもOKです）。
+   - AIが出力した回答をコピーし、同じ画面の下欄に貼り付けて **`[読み込んで適用]`** を押す（またはメイン画面でそのまま **`Ctrl+V`** を押す）だけで反映されます。
+
+2. **READMEから直接コピーしてAIに頼む場合のテンプレート**：
+
+```text
+Biwamasu Mixer（48kHz / 最大11バンド・パラメトリックEQ搭載ミキサー）に設定するための Equalizer APO 互換イコライザーデータを作成してください。
+
+【私の環境・やりたいこと】
+・使用しているイヤホン／ヘッドホン：（ここに機種名を書く、または普段使っているEQ画面のスクショや数値を貼る）
+・音の好み・目的：（例：添付スクショのEQを再現したい ／ 低音のボワつきを抑えて声や足音を聞きやすくしたい 等）
+
+【厳守してほしい出力フォーマット規則】
+1. バンド数は最大 11 バンド以内（Filter 1 〜 Filter 11）。10バンド以下の固定スライダー式EQを変換する場合はすべて `PK`（Q値は 1.41 前後）にすること。
+2. 使用可能なフィルター種類は以下の3種類のみ：
+   - `PK`（ピーキング：10 <= Fc <= 23500 Hz, -30.0 <= Gain <= +24.0 dB, 0.10 <= Q <= 20.00）
+   - `LSC`（ローシェルフ：標準 Q 0.71）
+   - `HSC`（ハイシェルフ：標準 Q 0.71）
+3. デジタル音割れ（0 dBFS超過）を防ぐため、合成周波数特性の最大ピークが 0.0 dB 以下になるよう、最大ブースト量に応じたマイナスの `Preamp: -X.X dB`（-36.0 〜 0.0 dB）を必ず記載すること。
+4. 1行目に `# Preset: （わかりやすい短い設定名）` を付け、以下のコードブロック形式で出力すること：
+
+# Preset: カスタムEQ
+Preamp: -3.5 dB
+Filter 1: ON LSC Fc 100 Hz Gain 3.0 dB Q 0.71
+Filter 2: ON PK Fc 250 Hz Gain -1.5 dB Q 1.41
+...
+```
+
+> **【このREADMEを参照しているAIアシスタントへの案内】**  
+> ユーザーから通常チャットで Biwamasu Mixer 用のイコライザー設定の作成・変換を求められた場合は、必ず上記のフォーマット規則（最大11バンド、`PK`/`LSC`/`HSC` のみ、音割れ防止のマイナス `Preamp:` 必須、1行目に `# Preset: 設定名`）に則ったコードブロックを出力してください。あわせて回答の最後に、**「出力したコードブロックをコピーし、`Biwamasu-Mixer Setting tool.exe` の『AI・テキスト貼付...』ボタンを押してそのまま貼り付ける（またはメイン画面で `Ctrl+V` を押す）と適用できます。最後に右下の『本体に保存』を押してください」** とユーザーへ案内してください。
+
+- **コマンドライン（PowerShell）から操作したい場合のコピペ用コマンド例**：
+  展開したフォルダ（`README.md` と同じ階層）で PowerShell を開き、以下のコマンドを実行します。
 
 ```powershell
 # 1. 現在の状態・通信ロック確認（UartLocked: true、CrcErrors: 0 なら正常）
@@ -218,8 +266,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Control-BiwamasuMixer.ps1
    - Enumerates as **`Biwamasu Mixer`**: a **UAC 2.0 composite Headset (Speaker OUT + Microphone IN) + Vendor HID control interface (`UAP1`)**.
    - **Speaker OUT & Mixed Bus EQ**: Accepts 48 kHz stereo PC audio, resamples via 4-point Catmull-Rom Hermite interpolation, and mixes digitally with UART console audio before applying the shared **post-mix 11-band floating-point biquad EQ** (`~5 ms` console-to-headphone latency, default EQ OFF / `-45.0 dB` master gain) and 32-bit PIO I2S output.
    - **Microphone IN**: Branches upstream of the mixer/EQ and streams bit-exact pre-EQ raw console PCM (`0.0 dB` max Feature Unit so Windows level `100` is unity pass-through with no OS mic boost) for clean OBS recording.
-   - **Vendor HID**: Allows the host script (`scripts/Control-BiwamasuMixer.ps1`) to load EQ filters, set gains, save configuration to flash, read diagnostics, or enter BOOTSEL.
+   - **Vendor HID**: Allows the native Windows setting tool (`Biwamasu-Mixer Setting tool.exe`, built from `host-gui/BiwamasuMixerGui.cs`) or PowerShell CLI (`scripts/Control-BiwamasuMixer.ps1`) to load/edit 11-band EQ filters (`.peace` and `.txt`), adjust gains, save configuration to flash, read diagnostics, or enter BOOTSEL.
 
 ### Build & Dependencies
-- Build configuration and dependency provenance are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and reproduced portably via `scripts/Setup-Toolchain.ps1` and `scripts/Build-Release.ps1` (which also packages `dist/biwamasu-mixer-release.zip` including `LICENSE`, `THIRD_PARTY_NOTICES.md`, `licenses/`, scripts, presets, docs, and clean metadata-free images).
+- Build configuration and dependency provenance are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and reproduced portably via `scripts/Setup-Toolchain.ps1`, `scripts/Build-Gui.ps1`, and `scripts/Build-Release.ps1` (which packages `dist/biwamasu-mixer-release.zip` including `.uf2` firmware, `Biwamasu-Mixer Setting tool.exe`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `licenses/`, scripts, presets, docs, and clean metadata-free images).
 - Project source uses `include/usb_ids.h` (`0x0000` placeholders with compile-time `#error`) until official open-source USB PIDs are assigned.

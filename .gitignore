@@ -4,6 +4,9 @@ dist/
 *.elf
 *.bin
 *.map
+*.uf2
+*.exe
+*.pdb
 captures/
 raw_photos/
 *.zip

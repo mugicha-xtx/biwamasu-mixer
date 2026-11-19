@@ -12,7 +12,7 @@ This project uses off-the-shelf open hardware modules wired on a standard solder
 |---|---|---|
 | `U1` | **Raspberry Pi Pico 2 H** (`RP2350`) | Console-side USB Audio 1.0 receiver (`firmware/tx-bridge`) |
 | `U2` | **Raspberry Pi Pico 2 H** (`RP2350`) | PC-side USB Audio 2.0 composite mixer & 11-band DSP (`firmware/rx-mixer`) |
-| `U3` | **Pimoroni Pico Audio Pack** (`PIM544`) | `PCM5100A` I2S DAC + `PAM8908JER` headphone amp (`GAIN` switch = `Low`) |
+| `U3` | **Pimoroni Pico Audio Pack** (`PIM544`) | `PCM5100A` I2S DAC + `PAM8908JER` headphone amp (`GAIN` switch = `LO GAIN`) |
 | `R1` | **33 ohm resistor** (1/4W axial) | Series damping resistor on the 3 Mbps UART signal line |
 | `W1..W9` | Jumper wires (9x) | Solderless interconnections on an `MB-102` breadboard |
 

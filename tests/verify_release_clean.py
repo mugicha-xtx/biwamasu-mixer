@@ -18,7 +18,10 @@ required_files = [
     'licenses/tinyusb-MIT.txt',
     'licenses/cmsis-Apache-2.0.txt',
     'licenses/pico-printf-MIT.txt',
+    'licenses/fluentui-emoji-MIT.txt',
     'presets/sample-peace.txt',
+    'host-gui/BiwamasuMixerGui.cs',
+    'scripts/Build-Gui.ps1',
     'scripts/Control-BiwamasuMixer.ps1',
     'images/wiring-1-placement.jpg',
     'images/wiring-2-uart-link.jpg',
@@ -112,7 +115,7 @@ if __name__ == '__main__':
     for symbol in ('USB_VID         0x0000u', 'BRIDGE_USB_PID  0x0000u', 'MIXER_USB_PID   0x0000u'):
         assert symbol in usb_ids_txt, f'include/usb_ids.h must keep 0x0000u default before official allocation ({symbol})'
 
-    forbidden_binaries = {'.uf2', '.elf', '.bin', '.map', '.wav', '.zip'}
+    forbidden_binaries = {'.uf2', '.elf', '.bin', '.map', '.wav', '.zip', '.exe', '.dll', '.pdb'}
     image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.heic'}
     forbidden_patterns = [
         ('win_users_path', re.compile(r'[a-z]:[\\/]+users[\\/]', re.I)),
@@ -123,7 +126,7 @@ if __name__ == '__main__':
     ]
     email_rx = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
 
-    spdx_exts = {'.c', '.h', '.pio', '.ps1', '.py'}
+    spdx_exts = {'.c', '.h', '.pio', '.ps1', '.py', '.cs'}
     checked_files = 0
     spdx_files = 0
     clean_images = 0
