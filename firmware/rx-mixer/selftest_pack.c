@@ -49,6 +49,17 @@ typedef struct {
     unsigned callbacks;
 } route_ctx_t;
 
+typedef struct {
+    rx_parser_t parser;
+    uint8_t wire[256];
+    uint8_t pcm[192];
+    uint8_t usb_out[196];
+    int32_t i2s[DSP_I2S_BLOCK_FRAMES * 2];
+} selftest_scratch_t;
+
+// Static scratch avoids >1.4 KB of stack usage during boot selftest on RP2350.
+static selftest_scratch_t g_selftest_scratch;
+
 static void route_cb(const rx_packet_t *p, void *ctx) {
     route_ctx_t *r = (route_ctx_t *)ctx;
     r->callbacks++;
@@ -124,12 +135,16 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     rx_usb_init(mic);
     rx_usb_set_active(mic, false); // OBS closed initially
 
-    rx_parser_t parser;
-    rx_parser_reset(&parser);
+    memset(&g_selftest_scratch, 0, sizeof(g_selftest_scratch));
+    rx_parser_t *parser = &g_selftest_scratch.parser;
+    uint8_t *wire = g_selftest_scratch.wire;
+    uint8_t *pcm = g_selftest_scratch.pcm;
+    uint8_t *usb_out = g_selftest_scratch.usb_out;
+    int32_t *i2s = g_selftest_scratch.i2s;
+
+    rx_parser_reset(parser);
     route_ctx_t ctx = { .mic = mic, .mixer = m, .callbacks = 0 };
 
-    uint8_t wire[256];
-    uint8_t pcm[192];
     for (unsigned pkt = 0; pkt < 4u; pkt++) {
         for (unsigned i = 0; i < 48u; i++) {
             int16_t s = (int16_t)(1000 + (int)(pkt * 48u + i));
@@ -137,14 +152,13 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
             u16_le(pcm + i * 4u + 2u, (uint16_t)(-s));
         }
         unsigned nbytes = build_v2_packet(wire, 1u, 1u, 100ull, pkt, (uint64_t)pkt * 48ull, 192u, 48u, pcm);
-        rx_feed(&parser, wire, nbytes, route_cb, &ctx);
+        rx_feed(parser, wire, nbytes, route_cb, &ctx);
     }
     CHECK(ctx.callbacks == 4u);
     CHECK(rx_usb_level(mic) == 0u);
     CHECK(mic->discarded == 192u);
     CHECK(dsp_sw_level(m) == 192u);
 
-    int32_t i2s[DSP_I2S_BLOCK_FRAMES * 2];
     for (unsigned blk = 0; blk < 6u; blk++) {
         dsp_render_i2s_block(m, i2s, DSP_I2S_BLOCK_FRAMES);
     }
@@ -160,10 +174,9 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
             u16_le(pcm + i * 4u + 2u, (uint16_t)(s * 2));
         }
         unsigned nbytes = build_v2_packet(wire, 1u, 1u, 100ull, pkt, (uint64_t)pkt * 48ull, 192u, 48u, pcm);
-        rx_feed(&parser, wire, nbytes, route_cb, &ctx);
+        rx_feed(parser, wire, nbytes, route_cb, &ctx);
     }
     CHECK(rx_usb_level(mic) == 288u);
-    uint8_t usb_out[196];
     unsigned real_f = 0;
     unsigned usb_n = rx_usb_packet(mic, usb_out, &real_f);
     CHECK(usb_n == 49u && real_f == 49u);

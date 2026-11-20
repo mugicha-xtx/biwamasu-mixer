@@ -72,7 +72,8 @@ for i in range(blocks):
 
 assert main_blocks == [(i, len(main_blocks)) for i in range(len(main_blocks))]
 payload = b''.join(memory[k] for k in sorted(memory))
-assert config in payload
+assert device in payload, 'Device descriptor (with expected VID:PID) missing from tx-bridge UF2'
+assert config in payload, 'Configuration descriptor missing from tx-bridge UF2'
 
 for s in re.findall(rb'[ -~]{4,}', payload):
     low = s.decode('ascii', 'ignore').lower()

@@ -18,7 +18,7 @@ target_include_directories(switch2_usb_bridge PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}
   ${CMAKE_CURRENT_LIST_DIR}/../../include
 )
-target_compile_definitions(switch2_usb_bridge PRIVATE PROBE_HID=1)
+target_compile_definitions(switch2_usb_bridge PRIVATE PROBE_HID=1 PICO_STACK_SIZE=0x1000)
 foreach(def USB_VID BRIDGE_USB_PID MIXER_USB_PID ALLOW_DEV_USB_IDS)
   if(DEFINED ${def} AND NOT "${${def}}" STREQUAL "")
     target_compile_definitions(switch2_usb_bridge PRIVATE ${def}=${${def}})

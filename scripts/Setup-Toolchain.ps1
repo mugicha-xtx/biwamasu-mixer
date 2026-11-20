@@ -6,6 +6,9 @@ $ProgressPreference = 'SilentlyContinue'
 $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        throw 'Git is required to fetch pinned Pico SDK and TinyUSB commits. Install Git for Windows and retry.'
+    }
     New-Item -ItemType Directory -Force .deps, dist | Out-Null
     $downloads = @(
         @('cmake.zip',     'https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-windows-x86_64.zip', '.deps'),
@@ -16,18 +19,19 @@ try {
         @('sdk-tools.zip', 'https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.2.0-4/pico-sdk-tools-2.2.0-x64-win.zip', '.deps/sdk-tools')
     )
     $lockPath = Join-Path $root 'tools/downloads.sha256.json'
-    $lock = if (Test-Path -LiteralPath $lockPath) { Get-Content -Raw -LiteralPath $lockPath | ConvertFrom-Json } else { $null }
+    if (!(Test-Path -LiteralPath $lockPath)) {
+        throw "Required SHA-256 lock file missing: $lockPath"
+    }
+    $lock = Get-Content -Raw -LiteralPath $lockPath | ConvertFrom-Json
     foreach ($d in $downloads) {
         $zip = Join-Path '.deps' $d[0]
         if (!(Test-Path -LiteralPath $zip)) {
             Write-Host "Downloading $($d[0])..."
             Invoke-WebRequest -UseBasicParsing $d[1] -OutFile $zip
         }
-        if ($lock) {
-            $expected = $lock.($d[0])
-            if (!$expected -or (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $expected) {
-                throw "Checksum mismatch: $zip. Delete the incomplete file and retry."
-            }
+        $expected = $lock.($d[0])
+        if (!$expected -or (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $expected) {
+            throw "Checksum mismatch: $zip. Delete the incomplete file and retry."
         }
         Expand-Archive -LiteralPath $zip -DestinationPath $d[2] -Force
     }
@@ -43,9 +47,9 @@ try {
             if ($LASTEXITCODE) { throw "git init failed for $dir" }
             git -C $dir remote add origin $r[1]
         }
+        if (git -C $dir status --porcelain) { throw "Local dependency edits detected in $dir" }
         $head = git -C $dir rev-parse --verify -q HEAD
         if ($head -ne $r[2]) {
-            if (git -C $dir status --porcelain) { throw "Local dependency edits detected in $dir" }
             git -C $dir fetch --depth 1 origin $r[2]
             if ($LASTEXITCODE) { throw "Dependency fetch failed for $dir" }
             git -C $dir checkout --detach $r[2]

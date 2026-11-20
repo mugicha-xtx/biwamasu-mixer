@@ -56,7 +56,7 @@
   <text x="525" y="355" text-anchor="middle" font-size="10" font-weight="bold" fill="#dc2626">No Power Wire Here</text>
 
   <!-- U2: Pico 2 RX Mixer -->
-  <rect x="600" y="96" width="245" height="398" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <rect x="600" y="96" width="245" height="368" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
   <rect x="827" y="146" width="18" height="44" rx="2" fill="#94a3b8" stroke="#334155" stroke-width="1.5"/>
   <text x="722" y="124" text-anchor="middle" font-size="14" font-weight="bold" fill="#1e3a8a">U2: Pico 2 H (RX Mixer)</text>
   <text x="722" y="142" text-anchor="middle" font-size="11" fill="#1e40af">firmware/rx-mixer (RP2350)</text>
@@ -67,9 +67,9 @@
   <text x="657" y="198" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 17: GP13 (RX)</text>
 
   <rect x="600" y="222" width="114" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="657" y="238" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 23: GND</text>
+  <text x="657" y="238" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 18: GND</text>
 
-  <!-- U2 Right / Bottom Output Pins to Audio Pack -->
+  <!-- U2 Right / Bottom Output Pins to Audio Pack (6 wires) -->
   <rect x="698" y="266" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
   <text x="771" y="282" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 39: VSYS (5V)</text>
 
@@ -77,57 +77,63 @@
   <text x="771" y="312" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 38: GND</text>
 
   <rect x="698" y="326" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="342" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 36: 3V3 (3.3V)</text>
+  <text x="771" y="342" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 29: GP22 (MUTE)</text>
 
   <rect x="698" y="356" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="372" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 29: GP22 (MUTE)</text>
+  <text x="771" y="372" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 12: GP9 (DATA)</text>
 
   <rect x="698" y="386" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="402" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 12: GP9 (DATA)</text>
+  <text x="771" y="402" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 14: GP10 (BCK)</text>
 
   <rect x="698" y="416" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="432" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 14: GP10 (BCK)</text>
-
-  <rect x="698" y="446" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="462" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 15: GP11 (LRCK)</text>
+  <text x="771" y="432" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 15: GP11 (LRCK)</text>
 
   <!-- PC HOST -->
   <line x1="845" y1="168" x2="950" y2="168" stroke="#0284c7" stroke-width="4"/>
   <text x="898" y="158" text-anchor="middle" font-size="10" font-weight="bold" fill="#0284c7">USB</text>
-  <rect x="950" y="114" width="145" height="106" rx="10" fill="#e2e8f0" stroke="#475569" stroke-width="2"/>
-  <text x="1022" y="142" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Windows PC Host</text>
-  <text x="1022" y="162" text-anchor="middle" font-size="10" fill="#334155">SPK OUT: PC Mix Input</text>
-  <text x="1022" y="178" text-anchor="middle" font-size="10" fill="#334155">MIC IN: OBS Raw Capture</text>
-  <text x="1022" y="194" text-anchor="middle" font-size="10" fill="#334155">HID: DSP / EQ Control</text>
+  <rect x="950" y="102" width="145" height="106" rx="10" fill="#e2e8f0" stroke="#475569" stroke-width="2"/>
+  <text x="1022" y="130" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Windows PC Host</text>
+  <text x="1022" y="150" text-anchor="middle" font-size="10" fill="#334155">SPK OUT: PC Mix Input</text>
+  <text x="1022" y="166" text-anchor="middle" font-size="10" fill="#334155">MIC IN: OBS Raw Capture</text>
+  <text x="1022" y="182" text-anchor="middle" font-size="10" fill="#334155">HID: DSP / EQ Control</text>
 
-  <!-- 7 I2S + Power Wires U2 -> U3 -->
+  <!-- 6 I2S + Power Wires U2 -> U3 (1:1 horizontal pin-to-pin alignment) -->
   <line x1="845" y1="278" x2="915" y2="278" stroke="#dc2626" stroke-width="2.5"/>
   <line x1="845" y1="308" x2="915" y2="308" stroke="#1e293b" stroke-width="2.5"/>
-  <line x1="845" y1="338" x2="915" y2="338" stroke="#ea580c" stroke-width="2.5"/>
-  <line x1="845" y1="368" x2="915" y2="368" stroke="#7c3aed" stroke-width="2.5"/>
+  <line x1="845" y1="338" x2="915" y2="338" stroke="#7c3aed" stroke-width="2.5"/>
+  <line x1="845" y1="368" x2="915" y2="368" stroke="#0d9488" stroke-width="2.5"/>
   <line x1="845" y1="398" x2="915" y2="398" stroke="#0d9488" stroke-width="2.5"/>
   <line x1="845" y1="428" x2="915" y2="428" stroke="#0d9488" stroke-width="2.5"/>
-  <line x1="845" y1="458" x2="915" y2="458" stroke="#0d9488" stroke-width="2.5"/>
 
   <!-- U3: Pimoroni Pico Audio Pack -->
-  <rect x="915" y="242" width="180" height="252" rx="10" fill="#fae8ff" stroke="#86198f" stroke-width="2.5"/>
-  <text x="1005" y="264" text-anchor="middle" font-size="12" font-weight="bold" fill="#701a75">U3: Pico Audio Pack</text>
-  <text x="1005" y="280" text-anchor="middle" font-size="10" fill="#86198f">PCM5100A + PAM8908 (LO GAIN)</text>
+  <rect x="915" y="220" width="180" height="252" rx="10" fill="#fae8ff" stroke="#86198f" stroke-width="2.5"/>
+  <text x="1005" y="241" text-anchor="middle" font-size="12" font-weight="bold" fill="#701a75">U3: Pico Audio Pack</text>
+  <text x="1005" y="257" text-anchor="middle" font-size="10" fill="#86198f">PCM5100A + PAM8908 (LO GAIN)</text>
 
-  <text x="928" y="282" font-size="10" fill="#0f172a"> </text>
-  <rect x="926" y="294" width="158" height="178" rx="6" fill="#ffffff" stroke="#a21caf"/>
-  <text x="936" y="312" font-size="11" fill="#0f172a">Pin 39: VSYS (Amp 5V)</text>
-  <text x="936" y="334" font-size="11" fill="#0f172a">Pin 38: GND</text>
-  <text x="936" y="356" font-size="11" fill="#0f172a">Pin 36: 3V3 (DAC)</text>
-  <text x="936" y="378" font-size="11" fill="#0f172a">Pin 29: MUTE (GP22=1)</text>
-  <text x="936" y="400" font-size="11" fill="#0f172a">Pin 12: I2S DATA</text>
-  <text x="936" y="422" font-size="11" fill="#0f172a">Pin 14: I2S BCK (64fs)</text>
-  <text x="936" y="444" font-size="11" fill="#0f172a">Pin 15: I2S LRCK (48k)</text>
-  <text x="1005" y="465" text-anchor="middle" font-size="10" font-weight="bold" fill="#86198f">3.5mm Headphone Out (LO GAIN)</text>
+  <rect x="915" y="266" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
+  <text x="999" y="282" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 39: VSYS (Amp+LDO)</text>
+
+  <rect x="915" y="296" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
+  <text x="999" y="312" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 38: GND</text>
+
+  <rect x="915" y="326" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
+  <text x="999" y="342" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 29: MUTE (GP22=1)</text>
+
+  <rect x="915" y="356" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
+  <text x="999" y="372" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 12: I2S DATA</text>
+
+  <rect x="915" y="386" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
+  <text x="999" y="402" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 14: I2S BCK (64fs)</text>
+
+  <rect x="915" y="416" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
+  <text x="999" y="432" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 15: I2S LRCK (48k)</text>
+
+  <text x="1005" y="459" text-anchor="middle" font-size="10" font-weight="bold" fill="#86198f">3.5mm Headphone Out (LO GAIN)</text>
 
   <!-- Footnote -->
-  <rect x="28" y="518" width="1064" height="76" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
-  <text x="44" y="542" font-size="12" font-weight="bold" fill="#0f172a">Design &amp; Assembly Notes:</text>
-  <text x="44" y="562" font-size="11" fill="#334155">1. Solderless assembly on an MB-102 breadboard with 9 male-male jumper wires (or 7 male-male + 2 male-female) and 1x 33-ohm 1/4W resistor.</text>
-  <text x="44" y="580" font-size="11" fill="#334155">2. U1 and U2 share ONLY UART signal (via R1) and GND. Leave VBUS (Pin 40), VSYS (Pin 39), and 3V3 (Pin 36) unconnected between U1 and U2.</text>
+  <rect x="28" y="502" width="1064" height="82" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="44" y="526" font-size="12" font-weight="bold" fill="#0f172a">Design &amp; Assembly Notes:</text>
+  <text x="44" y="546" font-size="11" fill="#334155">1. Solderless assembly on an MB-102 breadboard with 8 male-male jumper wires (2 between U1-U2 + 6 from U2 to U3) and 1x 33-ohm 1/4W resistor.</text>
+  <text x="44" y="564" font-size="11" fill="#334155">2. U1 and U2 share ONLY UART signal (via R1 + extension jumper) and GND. Leave VBUS (Pin 40), VSYS (Pin 39), and 3V3 (Pin 36) unconnected between U1 and U2.</text>
+  <text x="44" y="580" font-size="10.5" fill="#64748b">3. Pin 36 (3V3) on U3 (PIM544) is internally unconnected because U3 regulates its own clean 3.3V from VSYS onboard; no 3V3 wire is needed.</text>
 </svg>

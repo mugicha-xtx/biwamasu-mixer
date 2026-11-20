@@ -29,7 +29,10 @@ typedef struct {
 typedef struct {
     bool enabled;
     bool reset_pending;
+    uint16_t band_reset_mask;
     float preamp_linear;
+    float cur_preamp;
+    float cur_mix;
     dsp_biquad_coeff_t coeffs[DSP_EQ_BANDS];
     dsp_biquad_state_t states[DSP_EQ_BANDS];
 } dsp_eq_t;
@@ -89,11 +92,14 @@ void dsp_unlock_irq(uint32_t state);
 
 uint32_t dsp_crc32(const uint8_t *data, size_t len);
 float dsp_db_x100_to_linear(int32_t db_x100);
+bool dsp_float_sane(float x);
+bool dsp_biquad_stable(const dsp_biquad_coeff_t *c);
 
 void dsp_eq_init_flat(dsp_eq_t *eq, bool enabled);
 void dsp_eq_reset_states(dsp_eq_t *eq);
 void dsp_eq_set_preamp(dsp_eq_t *eq, float preamp_linear);
 void dsp_eq_set_band(dsp_eq_t *eq, unsigned band, const dsp_biquad_coeff_t *coeff);
+void dsp_eq_commit_profile(dsp_eq_t *eq, float preamp_linear, const dsp_biquad_coeff_t coeffs[DSP_EQ_BANDS]);
 void dsp_eq_process_stereo(dsp_eq_t *eq, float *l_io, float *r_io);
 
 void dsp_mixer_init(dsp_mixer_t *m);

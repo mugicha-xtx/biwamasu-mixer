@@ -94,154 +94,389 @@ namespace BiwamasuMixerGui
 
     internal static class AppIconFactory
     {
-        [StructLayout(LayoutKind.Sequential)]
-        private struct D2D1_PIXEL_FORMAT
+        private delegate void SvgShader(double x, double y, int idx, out double r, out double g, out double b);
+
+        private static double RadialT(double x, double y, double tx, double ty, double deg, double sx, double sy)
         {
-            public uint format;
-            public uint alphaMode;
+            double rad = deg * (Math.PI / 180.0);
+            double cs = Math.Cos(rad);
+            double sn = Math.Sin(rad);
+            double dx = x - tx;
+            double dy = y - ty;
+            double rx = (cs * dx + sn * dy) / sx;
+            double ry = (-sn * dx + cs * dy) / sy;
+            double t = Math.Sqrt(rx * rx + ry * ry);
+            if (t < 0.0) return 0.0;
+            if (t > 1.0) return 1.0;
+            return t;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct D2D1_RENDER_TARGET_PROPERTIES
+        private static double LinearT(double x, double y, double x1, double y1, double x2, double y2)
         {
-            public uint type;
-            public D2D1_PIXEL_FORMAT pixelFormat;
-            public float dpiX;
-            public float dpiY;
-            public uint usage;
-            public uint minLevel;
+            double vx = x2 - x1;
+            double vy = y2 - y1;
+            double denom = vx * vx + vy * vy;
+            if (denom <= 1e-12) return 0.0;
+            double t = ((x - x1) * vx + (y - y1) * vy) / denom;
+            if (t < 0.0) return 0.0;
+            if (t > 1.0) return 1.0;
+            return t;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct D2D1_COLOR_F
+        private static double Ramp(double t, double t0, double t1)
         {
-            public float r, g, b, a;
+            if (t <= t0) return 0.0;
+            if (t >= t1) return 1.0;
+            return (t - t0) / (t1 - t0);
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct D2D1_RECT_F
+        private static void LerpHex(int hex0, int hex1, double t, out double r, out double g, out double b)
         {
-            public float left, top, right, bottom;
+            double r0 = ((hex0 >> 16) & 0xFF) / 255.0;
+            double g0 = ((hex0 >> 8) & 0xFF) / 255.0;
+            double b0 = (hex0 & 0xFF) / 255.0;
+            double r1 = ((hex1 >> 16) & 0xFF) / 255.0;
+            double g1 = ((hex1 >> 8) & 0xFF) / 255.0;
+            double b1 = (hex1 & 0xFF) / 255.0;
+            r = r0 + (r1 - r0) * t;
+            g = g0 + (g1 - g0) * t;
+            b = b0 + (b1 - b0) * t;
         }
 
-        [DllImport("ole32.dll")]
-        private static extern int CoCreateInstance([In] ref Guid rclsid, IntPtr pUnkOuter, uint dwClsContext, [In] ref Guid riid, out IntPtr ppv);
-
-        [DllImport("d2d1.dll", ExactSpelling = true)]
-        private static extern int D2D1CreateFactory(uint factoryType, [In] ref Guid riid, IntPtr pFactoryOptions, out IntPtr ppIFactory);
-
-        [DllImport("dwrite.dll", ExactSpelling = true)]
-        private static extern int DWriteCreateFactory(uint factoryType, [In] ref Guid iid, out IntPtr factory);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate int CreateBitmapDel(IntPtr thisPtr, uint width, uint height, ref Guid pixelFormat, uint option, out IntPtr ppIBitmap);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate int CopyPixelsDel(IntPtr thisPtr, IntPtr prc, uint cbStride, uint cbBufferSize, byte[] pbBuffer);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate int CreateWicBitmapRenderTargetDel(IntPtr thisPtr, IntPtr target, ref D2D1_RENDER_TARGET_PROPERTIES props, out IntPtr rt);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate int CreateSolidColorBrushDel(IntPtr thisPtr, ref D2D1_COLOR_F color, IntPtr brushProps, out IntPtr brush);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate void BeginDrawDel(IntPtr thisPtr);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate void ClearDel(IntPtr thisPtr, ref D2D1_COLOR_F clearColor);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate void DrawTextDel(IntPtr thisPtr, [MarshalAs(UnmanagedType.LPWStr)] string str, uint len, IntPtr tf, ref D2D1_RECT_F rect, IntPtr brush, uint options, uint mode);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate int EndDrawDel(IntPtr thisPtr, out ulong t1, out ulong t2);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate int CreateTextFormatDel(IntPtr thisPtr, [MarshalAs(UnmanagedType.LPWStr)] string family, IntPtr coll, uint weight, uint style, uint stretch, float size, [MarshalAs(UnmanagedType.LPWStr)] string locale, out IntPtr tf);
-
-        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-        private delegate int SetAlignmentDel(IntPtr thisPtr, uint align);
-
-        private static T Vtbl<T>(IntPtr obj, int slot) where T : class
+        private static void BlendHexOver(ref double r, ref double g, ref double b, int hexRgb, double alpha)
         {
-            IntPtr vt = Marshal.ReadIntPtr(obj);
-            IntPtr fn = Marshal.ReadIntPtr(vt, slot * IntPtr.Size);
-            return Marshal.GetDelegateForFunctionPointer(fn, typeof(T)) as T;
+            if (alpha <= 0.0) return;
+            if (alpha > 1.0) alpha = 1.0;
+            double sr = ((hexRgb >> 16) & 0xFF) / 255.0;
+            double sg = ((hexRgb >> 8) & 0xFF) / 255.0;
+            double sb = (hexRgb & 0xFF) / 255.0;
+            double inv = 1.0 - alpha;
+            r = sr * alpha + r * inv;
+            g = sg * alpha + g * inv;
+            b = sb * alpha + b * inv;
         }
 
-        private static byte[] RenderFishEmojiPremul512(out int width, out int height)
+        private static double CapsuleOutsideBlur(double x, double y, double sigma)
         {
-            const uint S = 512;
-            width = (int)S;
-            height = (int)S;
+            double cx = x < 11.65625 ? 11.65625 : (x > 16.34375 ? 16.34375 : x);
+            double dx = x - cx;
+            double dy = y - 19.34375;
+            double s = (Math.Sqrt(dx * dx + dy * dy) - 8.65625) / sigma;
+            if (s <= -5.0) return 0.0;
+            if (s >= 5.0) return 1.0;
+            return 0.5 * (1.0 + Math.Tanh(0.79788456 * s));
+        }
 
-            IntPtr wic = IntPtr.Zero, bmp = IntPtr.Zero, d2d = IntPtr.Zero, rt = IntPtr.Zero, dw = IntPtr.Zero, tf = IntPtr.Zero, brush = IntPtr.Zero;
+        private static void RasterizePathAlpha(Bitmap maskBmp, byte[] scratchBgra, byte[] alphaOut, GraphicsPath path32, float scale)
+        {
+            using (GraphicsPath scaled = (GraphicsPath)path32.Clone())
+            using (Matrix m = new Matrix(scale, 0f, 0f, scale, 0f, 0f))
+            using (Graphics gr = Graphics.FromImage(maskBmp))
+            {
+                scaled.Transform(m);
+                gr.Clear(Color.Transparent);
+                gr.SmoothingMode = SmoothingMode.HighQuality;
+                gr.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                gr.FillPath(Brushes.White, scaled);
+            }
+
+            BitmapData bd = maskBmp.LockBits(
+                new Rectangle(0, 0, maskBmp.Width, maskBmp.Height),
+                ImageLockMode.ReadOnly,
+                PixelFormat.Format32bppArgb);
             try
             {
-                Guid clsidWic2 = new Guid("317d06e8-5f24-433d-bdf7-79ce68d8abc2");
-                Guid clsidWic1 = new Guid("cacaf262-9370-4615-a13b-9f5539da4c0a");
-                Guid iidWic = new Guid("ec5ec8a9-c395-4314-9c77-54d7a935ff70");
-                int hr = CoCreateInstance(ref clsidWic2, IntPtr.Zero, 1, ref iidWic, out wic);
-                if (hr < 0) hr = CoCreateInstance(ref clsidWic1, IntPtr.Zero, 1, ref iidWic, out wic);
-                if (hr < 0) throw new InvalidOperationException("WIC init failed: 0x" + hr.ToString("X8"));
-
-                Guid pbgra = new Guid("6fddc324-4e03-4bfe-b185-3d77768dc910");
-                hr = Vtbl<CreateBitmapDel>(wic, 17)(wic, S, S, ref pbgra, 0x2u, out bmp);
-                if (hr < 0) throw new InvalidOperationException("CreateBitmap failed: 0x" + hr.ToString("X8"));
-
-                Guid iidD2d = new Guid("06152247-6f50-465a-9245-118bfd3b6007");
-                hr = D2D1CreateFactory(0, ref iidD2d, IntPtr.Zero, out d2d);
-                if (hr < 0) throw new InvalidOperationException("D2D1 init failed: 0x" + hr.ToString("X8"));
-
-                D2D1_RENDER_TARGET_PROPERTIES props = new D2D1_RENDER_TARGET_PROPERTIES();
-                props.pixelFormat.format = 87; // DXGI_FORMAT_B8G8R8A8_UNORM
-                props.pixelFormat.alphaMode = 1; // D2D1_ALPHA_MODE_PREMULTIPLIED
-                props.dpiX = 96f;
-                props.dpiY = 96f;
-                hr = Vtbl<CreateWicBitmapRenderTargetDel>(d2d, 13)(d2d, bmp, ref props, out rt);
-                if (hr < 0) throw new InvalidOperationException("CreateWicBitmapRenderTarget failed: 0x" + hr.ToString("X8"));
-
-                Guid iidDw = new Guid("b859ee5a-d838-4b5b-a2e8-1adc7d93db48");
-                hr = DWriteCreateFactory(0, ref iidDw, out dw);
-                if (hr < 0) throw new InvalidOperationException("DWrite init failed: 0x" + hr.ToString("X8"));
-
-                hr = Vtbl<CreateTextFormatDel>(dw, 15)(dw, "Segoe UI Emoji", IntPtr.Zero, 400, 0, 5, 380f, "en-us", out tf);
-                if (hr < 0) throw new InvalidOperationException("CreateTextFormat failed: 0x" + hr.ToString("X8"));
-
-                Vtbl<SetAlignmentDel>(tf, 3)(tf, 2);
-                Vtbl<SetAlignmentDel>(tf, 4)(tf, 2);
-
-                D2D1_COLOR_F black = new D2D1_COLOR_F { r = 0f, g = 0f, b = 0f, a = 1f };
-                hr = Vtbl<CreateSolidColorBrushDel>(rt, 8)(rt, ref black, IntPtr.Zero, out brush);
-                if (hr < 0) throw new InvalidOperationException("CreateSolidColorBrush failed: 0x" + hr.ToString("X8"));
-
-                Vtbl<BeginDrawDel>(rt, 48)(rt);
-                D2D1_COLOR_F clear = new D2D1_COLOR_F();
-                Vtbl<ClearDel>(rt, 47)(rt, ref clear);
-                string fishEmoji = "\uD83D\uDC1F"; // U+1F41F FISH
-                D2D1_RECT_F rect = new D2D1_RECT_F { left = 0f, top = 0f, right = S, bottom = S };
-                Vtbl<DrawTextDel>(rt, 27)(rt, fishEmoji, (uint)fishEmoji.Length, tf, ref rect, brush, 4u, 0u);
-
-                ulong t1, t2;
-                hr = Vtbl<EndDrawDel>(rt, 49)(rt, out t1, out t2);
-                if (hr < 0) throw new InvalidOperationException("EndDraw failed: 0x" + hr.ToString("X8"));
-
-                byte[] buf = new byte[S * S * 4];
-                hr = Vtbl<CopyPixelsDel>(bmp, 7)(bmp, IntPtr.Zero, S * 4, (uint)buf.Length, buf);
-                if (hr < 0) throw new InvalidOperationException("CopyPixels failed: 0x" + hr.ToString("X8"));
-                return buf;
+                Marshal.Copy(bd.Scan0, scratchBgra, 0, scratchBgra.Length);
             }
             finally
             {
-                if (brush != IntPtr.Zero) Marshal.Release(brush);
-                if (tf != IntPtr.Zero) Marshal.Release(tf);
-                if (dw != IntPtr.Zero) Marshal.Release(dw);
-                if (rt != IntPtr.Zero) Marshal.Release(rt);
-                if (d2d != IntPtr.Zero) Marshal.Release(d2d);
-                if (bmp != IntPtr.Zero) Marshal.Release(bmp);
-                if (wic != IntPtr.Zero) Marshal.Release(wic);
+                maskBmp.UnlockBits(bd);
             }
+
+            for (int i = 0, p = 3; i < alphaOut.Length; i++, p += 4)
+            {
+                alphaOut[i] = scratchBgra[p];
+            }
+        }
+
+        private static void BlurAlphaRegion(
+            byte[] src, byte[] tmp, byte[] dst,
+            int w, int h, int x0, int y0, int x1, int y1, int radius)
+        {
+            Array.Clear(tmp, 0, tmp.Length);
+            Array.Clear(dst, 0, dst.Length);
+            int diam = radius * 2 + 1;
+
+            for (int y = y0; y <= y1; y++)
+            {
+                int row = y * w;
+                for (int x = x0; x <= x1; x++)
+                {
+                    int sum = 0;
+                    for (int k = -radius; k <= radius; k++)
+                    {
+                        int sx = x + k;
+                        if (sx < 0) sx = 0; else if (sx >= w) sx = w - 1;
+                        sum += src[row + sx];
+                    }
+                    tmp[row + x] = (byte)((sum + diam / 2) / diam);
+                }
+            }
+
+            for (int y = y0; y <= y1; y++)
+            {
+                int row = y * w;
+                for (int x = x0; x <= x1; x++)
+                {
+                    int sum = 0;
+                    for (int k = -radius; k <= radius; k++)
+                    {
+                        int sy = y + k;
+                        if (sy < 0) sy = 0; else if (sy >= h) sy = h - 1;
+                        sum += tmp[sy * w + x];
+                    }
+                    dst[row + x] = (byte)((sum + diam / 2) / diam);
+                }
+            }
+        }
+
+        private static void CompositeLayer(
+            float[] accR, float[] accG, float[] accB, float[] accA,
+            byte[] alphaMask, int w, int h, double invScale, double opacityScale, SvgShader shader)
+        {
+            for (int py = 0; py < h; py++)
+            {
+                double uy = (py + 0.5) * invScale;
+                int row = py * w;
+                for (int px = 0; px < w; px++)
+                {
+                    int idx = row + px;
+                    byte ma = alphaMask[idx];
+                    if (ma == 0) continue;
+                    double sa = (ma / 255.0) * opacityScale;
+                    if (sa <= 0.0) continue;
+                    if (sa > 1.0) sa = 1.0;
+
+                    double ux = (px + 0.5) * invScale;
+                    double sr, sg, sb;
+                    shader(ux, uy, idx, out sr, out sg, out sb);
+
+                    float inv = (float)(1.0 - sa);
+                    accR[idx] = (float)(sr * sa) + accR[idx] * inv;
+                    accG[idx] = (float)(sg * sa) + accG[idx] * inv;
+                    accB[idx] = (float)(sb * sa) + accB[idx] * inv;
+                    accA[idx] = (float)sa + accA[idx] * inv;
+                }
+            }
+        }
+
+        // Renders Microsoft Fluent UI Emoji Fish (assets/Fish/Color/fish_color.svg, MIT License) directly from vector geometry.
+        private static byte[] RenderFishEmojiPremul512(out int width, out int height)
+        {
+            const int S = 512;
+            const float Scale = S / 32.0f;
+            const double InvScale = 32.0 / S;
+            width = S;
+            height = S;
+
+            int total = S * S;
+            float[] accR = new float[total];
+            float[] accG = new float[total];
+            float[] accB = new float[total];
+            float[] accA = new float[total];
+            byte[] scratchBgra = new byte[total * 4];
+            byte[] mask = new byte[total];
+            byte[] blurTmp = new byte[total];
+            byte[] blurA = new byte[total];
+            byte[] blurB = new byte[total];
+
+            using (Bitmap maskBmp = new Bitmap(S, S, PixelFormat.Format32bppArgb))
+            {
+                // 1. Lower mouth circle
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.AddEllipse(3.05469f - 1.05469f, 19.9453f - 1.05469f, 2.10938f, 2.10938f);
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x3AAEE7, 0x45A5E8, RadialT(x, y, 3.21875, 19.6016, 150.684, 1.1648, 1.5939), out r, out g, out b);
+                    });
+                }
+
+                // 2. Upper mouth circle
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.AddEllipse(3.05469f - 1.05469f, 17.9453f - 1.05469f, 2.10938f, 2.10938f);
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x3AAEE7, 0x45A5E8, RadialT(x, y, 3.21875, 17.6016, 150.684, 1.1648, 1.5939), out r, out g, out b);
+                    });
+                }
+
+                // 3. Body capsule (x=3, y=10.6875, w=22, h=17.3125, rx=8.65625)
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.AddArc(3.0f, 10.6875f, 17.3125f, 17.3125f, 90.0f, 180.0f);
+                    p.AddArc(25.0f - 17.3125f, 10.6875f, 17.3125f, 17.3125f, 270.0f, 180.0f);
+                    p.CloseFigure();
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x50CAFF, 0x4D7FFF, RadialT(x, y, 11.0, 16.0, 52.125, 18.5279, 24.3438), out r, out g, out b);
+                        BlendHexOver(ref r, ref g, ref b, 0x508BFF, 1.0 - LinearT(x, y, 14.0, 29.375, 14.0, 24.4375));
+                        BlendHexOver(ref r, ref g, ref b, 0x5D68FF, CapsuleOutsideBlur(x + 0.5, y + 0.5, 1.0));
+                        BlendHexOver(ref r, ref g, ref b, 0x2A69D2, CapsuleOutsideBlur(x + 0.25, y, 0.25));
+                        BlendHexOver(ref r, ref g, ref b, 0x50CAFF, 1.0 - RadialT(x, y, 5.75, 11.5, 54.3004, 12.8527, 14.7095));
+                        BlendHexOver(ref r, ref g, ref b, 0x59C0E7, Ramp(RadialT(x, y, 26.0, 29.1875, -144.29, 26.5554, 22.4157), 0.935277, 1.0));
+                    });
+                }
+
+                // 4. Gill soft glow + crisp gill crescent
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.StartFigure();
+                    p.AddBezier(12.4303f, 14.1246f, 12.2187f, 13.9472f, 11.9033f, 13.9750f, 11.7260f, 14.1867f);
+                    p.AddBezier(11.7260f, 14.1867f, 11.5486f, 14.3983f, 11.5764f, 14.7137f, 11.7880f, 14.8910f);
+                    p.AddBezier(11.7880f, 14.8910f, 14.3327f, 17.0234f, 14.5775f, 20.8423f, 11.7459f, 23.8361f);
+                    p.AddBezier(11.7459f, 23.8361f, 11.5562f, 24.0367f, 11.5650f, 24.3532f, 11.7656f, 24.5429f);
+                    p.AddBezier(11.7656f, 24.5429f, 11.9662f, 24.7327f, 12.2827f, 24.7239f, 12.4725f, 24.5233f);
+                    p.AddBezier(12.4725f, 24.5233f, 15.6409f, 21.1733f, 15.4794f, 16.6797f, 12.4303f, 14.1246f);
+                    p.CloseFigure();
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+
+                    // Soft glow (stdDeviation=1 => ~16px; 2-pass box blur radius 14)
+                    BlurAlphaRegion(mask, blurTmp, blurA, S, S, 136, 176, 296, 444, 14);
+                    BlurAlphaRegion(blurA, blurTmp, blurB, S, S, 136, 176, 296, 444, 14);
+                    CompositeLayer(accR, accG, accB, accA, blurB, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x3A94E7, 0x3A94E7, 0.0, out r, out g, out b);
+                    });
+
+                    // Inner shadow blur (stdDeviation=0.3 => ~5px)
+                    BlurAlphaRegion(mask, blurTmp, blurA, S, S, 176, 214, 258, 406, 5);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x3F61E7, 0x3F61E7, 0.0, out r, out g, out b);
+                        BlendHexOver(ref r, ref g, ref b, 0x4A8CFF, 1.0 - Ramp(RadialT(x, y, 11.9062, 24.5078, -51.9939, 1.49717, 0.843924), 0.0, 0.609165));
+                        BlendHexOver(ref r, ref g, ref b, 0x4A8CFF, 1.0 - Ramp(RadialT(x, y, 12.0469, 14.4297, 46.7357, 1.27669, 0.760996), 0.0, 0.609165));
+                        BlendHexOver(ref r, ref g, ref b, 0x4F7FE6, 1.0 - Ramp(RadialT(x, y, 13.1964, 19.3437, 0.0, 1.64731, 3.34375), 0.203247, 1.0));
+                        BlendHexOver(ref r, ref g, ref b, 0x2270F0, 1.0 - (blurA[idx] / 255.0));
+                    });
+                }
+
+                // 5. Eye circle
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.AddEllipse(8.67969f - 0.5f, 17.4805f - 0.5f, 1.0f, 1.0f);
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x433437, 0x3B2838, Ramp(RadialT(x, y, 8.82813, 17.3196, 125.838, 0.693863, 0.618606), 0.00558659, 1.0), out r, out g, out b);
+                        BlendHexOver(ref r, ref g, ref b, 0x5C5051, 1.0 - RadialT(x, y, 8.86655, 17.3555, 137.643, 0.35946, 0.316238));
+                        BlendHexOver(ref r, ref g, ref b, 0x5C5051, LinearT(x, y, 8.58139, 17.0877, 8.23764, 16.869));
+                    });
+                }
+
+                // 6. Lower tail fin
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.StartFigure();
+                    p.AddBezier(25.0f, 24.125f, 25.0f, 26.3341f, 26.7909f, 28.125f, 29.0f, 28.125f);
+                    p.AddLine(29.0f, 28.125f, 29.2188f, 28.125f);
+                    p.AddBezier(29.2188f, 28.125f, 29.4949f, 28.125f, 29.7188f, 27.9011f, 29.7188f, 27.625f);
+                    p.AddLine(29.7188f, 27.625f, 29.7188f, 23.375f);
+                    p.AddBezier(29.7188f, 23.375f, 29.7188f, 21.1659f, 27.9279f, 19.375f, 25.7188f, 19.375f);
+                    p.AddLine(25.7188f, 19.375f, 25.0f, 19.375f);
+                    p.CloseFigure();
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x46AAFF, 0x368AFF, RadialT(x, y, 28.375, 20.75, 89.029, 7.37606, 7.47018), out r, out g, out b);
+                        BlendHexOver(ref r, ref g, ref b, 0x3184E6, Ramp(RadialT(x, y, 32.8125, 20.6875, 135.266, 9.50185, 15.6131), 0.800545, 1.0));
+                        BlendHexOver(ref r, ref g, ref b, 0x3184E6, Ramp(LinearT(x, y, 38.4375, 25.5625, 25.0, 25.5625), 0.848889, 1.0));
+                        BlendHexOver(ref r, ref g, ref b, 0x54BDFF, 1.0 - Ramp(RadialT(x, y, 29.7187, 21.125, 90.0, 7.0, 2.96293), 0.0, 0.92268));
+                    });
+                }
+
+                // 7. Upper tail fin
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.StartFigure();
+                    p.AddBezier(25.0f, 14.625f, 25.0f, 12.4159f, 26.7909f, 10.625f, 29.0f, 10.625f);
+                    p.AddLine(29.0f, 10.625f, 29.2188f, 10.625f);
+                    p.AddBezier(29.2188f, 10.625f, 29.4949f, 10.625f, 29.7188f, 10.8489f, 29.7188f, 11.125f);
+                    p.AddLine(29.7188f, 11.125f, 29.7188f, 15.375f);
+                    p.AddBezier(29.7188f, 15.375f, 29.7188f, 17.5841f, 27.9279f, 19.375f, 25.7188f, 19.375f);
+                    p.AddLine(25.7188f, 19.375f, 25.0f, 19.375f);
+                    p.CloseFigure();
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x46AAFF, 0x368AFF, RadialT(x, y, 28.7261, 11.5895, 109.396, 8.58528, 6.27348), out r, out g, out b);
+                        BlendHexOver(ref r, ref g, ref b, 0x3184E6, Ramp(RadialT(x, y, 33.1875, 16.0, -165.196, 9.05042, 14.8713), 0.725568, 1.0));
+                        BlendHexOver(ref r, ref g, ref b, 0x54BDFF, 1.0 - Ramp(RadialT(x, y, 29.7188, 11.0937, 90.0, 6.3125, 1.16539), 0.0, 0.92268));
+                    });
+                }
+
+                // 8. Ventral (bottom) fin
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.StartFigure();
+                    p.AddBezier(15.1708f, 28.0f, 16.1466f, 28.0f, 16.9377f, 28.7910f, 16.9377f, 29.7668f);
+                    p.AddBezier(16.9377f, 29.7668f, 16.9377f, 29.8888f, 16.8388f, 29.9877f, 16.7168f, 29.9877f);
+                    p.AddLine(16.7168f, 29.9877f, 14.9563f, 29.9877f);
+                    p.AddBezier(14.9563f, 29.9877f, 13.8585f, 29.9877f, 12.9686f, 29.0978f, 12.9686f, 28.0f);
+                    p.CloseFigure();
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x4286FF, 0x3170FF, RadialT(x, y, 15.6875, 29.5, -156.615, 2.51946, 1.78774), out r, out g, out b);
+                        BlendHexOver(ref r, ref g, ref b, 0x0E66FD, 1.0 - LinearT(x, y, 15.1875, 27.5312, 15.2188, 28.5156));
+                        BlendHexOver(ref r, ref g, ref b, 0x519DFF, 1.0 - Ramp(RadialT(x, y, 17.2344, 29.8125, -153.997, 2.85112, 1.12711), 0.0, 0.969412));
+                    });
+                }
+
+                // 9. Dorsal (top) fin
+                using (GraphicsPath p = new GraphicsPath())
+                {
+                    p.StartFigure();
+                    p.AddBezier(17.7502f, 10.6875f, 19.9593f, 10.6875f, 21.7502f, 8.89664f, 21.7502f, 6.6875f);
+                    p.AddLine(21.7502f, 6.6875f, 21.7502f, 6.35937f);
+                    p.AddBezier(21.7502f, 6.35937f, 21.7502f, 6.08323f, 21.5263f, 5.85937f, 21.2502f, 5.85937f);
+                    p.AddLine(21.2502f, 5.85937f, 16.1092f, 5.85937f);
+                    p.AddBezier(16.1092f, 5.85937f, 13.9001f, 5.85937f, 12.1092f, 7.65024f, 12.1092f, 9.85937f);
+                    p.AddLine(12.1092f, 9.85937f, 12.1092f, 10.6875f);
+                    p.CloseFigure();
+                    RasterizePathAlpha(maskBmp, scratchBgra, mask, p, Scale);
+                    CompositeLayer(accR, accG, accB, accA, mask, S, S, InvScale, 1.0, delegate(double x, double y, int idx, out double r, out double g, out double b)
+                    {
+                        LerpHex(0x46AAFF, 0x2B86D9, RadialT(x, y, 20.6875, 6.875, 156.038, 9.38736, 4.65552), out r, out g, out b);
+                        BlendHexOver(ref r, ref g, ref b, 0x0A75CC, 1.0 - Ramp(LinearT(x, y, 12.1092, 11.4687, 12.1092, 9.46875), 0.109375, 1.0));
+                        BlendHexOver(ref r, ref g, ref b, 0x54BDFF, 1.0 - Ramp(RadialT(x, y, 22.25, 5.5, 143.267, 5.22502, 1.64552), 0.0, 0.644093));
+                    });
+                }
+            }
+
+            byte[] outPremul = new byte[total * 4];
+            for (int i = 0; i < total; i++)
+            {
+                int b = (int)Math.Round(accB[i] * 255.0f);
+                int g = (int)Math.Round(accG[i] * 255.0f);
+                int r = (int)Math.Round(accR[i] * 255.0f);
+                int a = (int)Math.Round(accA[i] * 255.0f);
+                if (a <= 0) continue;
+                if (a > 255) a = 255;
+                if (b < 0) b = 0; else if (b > a) b = a;
+                if (g < 0) g = 0; else if (g > a) g = a;
+                if (r < 0) r = 0; else if (r > a) r = a;
+                int p = i * 4;
+                outPremul[p] = (byte)b;
+                outPremul[p + 1] = (byte)g;
+                outPremul[p + 2] = (byte)r;
+                outPremul[p + 3] = (byte)a;
+            }
+            return outPremul;
         }
 
         private static byte[] ResampleCenteredStraightBgra(
@@ -606,12 +841,20 @@ namespace BiwamasuMixerGui
     internal static class EqDspMath
     {
         private static readonly Regex PreampRx = new Regex(
-            @"^\s*(?:[-*>・]\s*)?Preamp\s*:\s*([+-]?\d+(?:\.\d+)?)\s*dB",
+            @"^Preamp\s*:\s*([^\s]+)\s*dB\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        private static readonly Regex FilterRx = new Regex(
-            @"^\s*(?:[-*>・]\s*)?Filter\s+\d+\s*:\s*(ON|OFF)\s+(PK|PEQ|LSC|LS|HSC|HS)\s+Fc\s+([0-9,]+(?:\.[0-9]+)?)\s*Hz\s+Gain\s+([+-]?[0-9]+(?:\.[0-9]+)?)\s*dB(?:\s+Q\s+([0-9]+(?:\.[0-9]+)?))?",
+        private static readonly Regex FilterHeadRx = new Regex(
+            @"^Filter\s*\d*\s*:\s*(ON|OFF)\s+([A-Za-z0-9]+)(?:\s+(.*))?$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex FilterBodyRx = new Regex(
+            @"^Fc\s+([^\s]+)\s*Hz\s+Gain\s+([^\s]+)\s*dB(?:\s+(?:Q\s+([^\s]+)|BW\s+Oct\s+([^\s]+)))?\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ThousandsCommaRx = new Regex(
+            @"(?<=\d),(?=\d{3}(?!\d))",
+            RegexOptions.Compiled);
 
         private static readonly Regex PresetCommentRx = new Regex(
             @"^\s*(?:#|//|;)\s*(?:Preset|Name|設定名)\s*[:：]\s*(.+?)\s*$",
@@ -625,16 +868,109 @@ namespace BiwamasuMixerGui
             @"^\s*([A-Za-z]+)(\d*)\s*=\s*(.+?)\s*$",
             RegexOptions.Compiled);
 
+        public static bool IsFinite(double v)
+        {
+            return !double.IsNaN(v) && !double.IsInfinity(v);
+        }
+
+        public static bool TryParseStrictNumber(string raw, out double value)
+        {
+            value = 0.0;
+            if (string.IsNullOrEmpty(raw)) return false;
+            string s = NormalizeNumericToken(raw);
+            if (s.IndexOf(',') >= 0)
+            {
+                string withoutThousands = ThousandsCommaRx.Replace(s, "");
+                if (withoutThousands.IndexOf(',') >= 0)
+                {
+                    return false;
+                }
+                s = withoutThousands;
+            }
+            if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+            {
+                return false;
+            }
+            return IsFinite(value);
+        }
+
+        private static string NormalizeNumericToken(string raw)
+        {
+            StringBuilder sb = new StringBuilder(raw.Length);
+            for (int i = 0; i < raw.Length; i++)
+            {
+                char ch = raw[i];
+                if (ch >= '\uFF01' && ch <= '\uFF5E')
+                {
+                    ch = (char)(ch - 0xFEE0);
+                }
+                if (ch == '\u2212' || ch == '\u2013' || ch == '\u2014' || ch == '\u2010' || ch == '\u2011' || ch == '\uFE63')
+                {
+                    ch = '-';
+                }
+                else if (ch == '\u3000')
+                {
+                    ch = ' ';
+                }
+                sb.Append(ch);
+            }
+            return sb.ToString().Trim();
+        }
+
+        private static string NormalizeEqDirectiveLine(string raw)
+        {
+            string s = NormalizeNumericToken(raw);
+            if (s.Length == 0) return s;
+
+            // Strip inline code backticks and Markdown list/quote prefixes
+            s = s.Trim('`').Trim();
+            while (s.Length > 0)
+            {
+                if (s.StartsWith("- ") || s.StartsWith("* ") || s.StartsWith("> "))
+                {
+                    s = s.Substring(2).TrimStart();
+                }
+                else if (s.StartsWith("・"))
+                {
+                    s = s.Substring(1).TrimStart();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            // Strip Markdown bold/italic emphasis (**Preamp:**, *Filter 1:*, __Preamp__)
+            s = s.Replace("**", "").Replace("__", "").Replace("*", "").Trim();
+
+            // Strip trailing inline comments (# or ;) if present after settings
+            int hashIdx = s.IndexOf(" #", StringComparison.Ordinal);
+            if (hashIdx > 0) s = s.Substring(0, hashIdx).TrimEnd();
+            int semiIdx = s.IndexOf(" ;", StringComparison.Ordinal);
+            if (semiIdx > 0) s = s.Substring(0, semiIdx).TrimEnd();
+
+            return s;
+        }
+
+        public static double BandwidthOctavesToQ(double bwOct)
+        {
+            if (!IsFinite(bwOct) || bwOct <= 0.02 || bwOct > 20.0) return -1.0;
+            double pow2 = Math.Pow(2.0, bwOct);
+            double denom = pow2 - 1.0;
+            if (denom <= 1e-9) return -1.0;
+            return Math.Sqrt(pow2) / denom;
+        }
+
         public static float ComputePreampLinear(double preampDb, out string error)
         {
             error = null;
-            if (preampDb < -36.0 || preampDb > 12.0)
+            if (!IsFinite(preampDb) || preampDb < -36.0 || preampDb > 12.0)
             {
                 error = "プリアンプは -36.0 〜 +12.0 dB の範囲で指定してください。";
                 return 1.0f;
             }
             float lin = (float)Math.Pow(10.0, preampDb / 20.0);
-            if (!(lin >= 0.01f && lin <= 4.0f))
+            if (!FloatSane(lin) || !(lin >= 0.01f && lin <= 4.0f))
             {
                 error = "プリアンプの値が範囲外です (-36.0 〜 +12.0 dB)。";
                 return 1.0f;
@@ -650,17 +986,17 @@ namespace BiwamasuMixerGui
                 return new float[] { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f };
             }
 
-            if (band.FrequencyHz < 10.0 || band.FrequencyHz > 23500.0)
+            if (!IsFinite(band.FrequencyHz) || band.FrequencyHz < 10.0 || band.FrequencyHz > 23500.0)
             {
                 error = string.Format("Band {0}: 周波数は 10 〜 23500 Hz の範囲で指定してください。", bandNumberForError);
                 return null;
             }
-            if (band.Q <= 0.05 || band.Q > 30.0)
+            if (!IsFinite(band.Q) || band.Q < 0.06 || band.Q > 30.0)
             {
                 error = string.Format("Band {0}: Q値は 0.06 〜 30.0 の範囲で指定してください。", bandNumberForError);
                 return null;
             }
-            if (band.GainDb < -30.0 || band.GainDb > 24.0)
+            if (!IsFinite(band.GainDb) || band.GainDb < -30.0 || band.GainDb > 24.0)
             {
                 error = string.Format("Band {0}: ゲインは -30.0 〜 +24.0 dB の範囲で指定してください。", bandNumberForError);
                 return null;
@@ -888,9 +1224,12 @@ namespace BiwamasuMixerGui
                         string k = line.Substring(0, eqPos).Trim();
                         string v = line.Substring(eqPos + 1).Trim();
                         double parsedPre;
-                        if (string.Equals(k, "PreAmp", StringComparison.OrdinalIgnoreCase) &&
-                            double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out parsedPre))
+                        if (string.Equals(k, "PreAmp", StringComparison.OrdinalIgnoreCase))
                         {
+                            if (!TryParseStrictNumber(v, out parsedPre))
+                            {
+                                throw new InvalidDataException(string.Format("行 {0}: PreAmp の数値が不正です ({1})。", i + 1, line));
+                            }
                             preampDb = parsedPre;
                         }
                     }
@@ -913,28 +1252,31 @@ namespace BiwamasuMixerGui
                     string.Equals(keyPrefix, "Frequency", StringComparison.OrdinalIgnoreCase))
                 {
                     double fv;
-                    if (double.TryParse(valStr, NumberStyles.Float, CultureInfo.InvariantCulture, out fv))
+                    if (!TryParseStrictNumber(valStr, out fv))
                     {
-                        freqs[idx] = fv;
+                        throw new InvalidDataException(string.Format("行 {0}: Frequency{1} の数値が不正です ({2})。", i + 1, idx, line));
                     }
+                    freqs[idx] = fv;
                 }
                 else if (string.Equals(section, "Gains", StringComparison.OrdinalIgnoreCase) &&
                          string.Equals(keyPrefix, "Gain", StringComparison.OrdinalIgnoreCase))
                 {
                     double gv;
-                    if (double.TryParse(valStr, NumberStyles.Float, CultureInfo.InvariantCulture, out gv))
+                    if (!TryParseStrictNumber(valStr, out gv))
                     {
-                        gains[idx] = gv;
+                        throw new InvalidDataException(string.Format("行 {0}: Gain{1} の数値が不正です ({2})。", i + 1, idx, line));
                     }
+                    gains[idx] = gv;
                 }
                 else if (string.Equals(section, "Qualities", StringComparison.OrdinalIgnoreCase) &&
                          string.Equals(keyPrefix, "Quality", StringComparison.OrdinalIgnoreCase))
                 {
                     double qv;
-                    if (double.TryParse(valStr, NumberStyles.Float, CultureInfo.InvariantCulture, out qv))
+                    if (!TryParseStrictNumber(valStr, out qv))
                     {
-                        quals[idx] = qv;
+                        throw new InvalidDataException(string.Format("行 {0}: Quality{1} の数値が不正です ({2})。", i + 1, idx, line));
                     }
+                    quals[idx] = qv;
                 }
                 else if (string.Equals(section, "Filters", StringComparison.OrdinalIgnoreCase) &&
                          string.Equals(keyPrefix, "Filter", StringComparison.OrdinalIgnoreCase))
@@ -1034,11 +1376,10 @@ namespace BiwamasuMixerGui
 
             for (int i = 0; i < lines.Length; i++)
             {
-                string line = lines[i].Replace('\u3000', ' ').Trim();
-                if (line.Length == 0 || line.StartsWith("```")) continue;
-                line = line.Trim('`');
+                string rawTrim = lines[i].Replace('\u3000', ' ').Trim();
+                if (rawTrim.Length == 0 || rawTrim.StartsWith("```")) continue;
 
-                Match nm = PresetCommentRx.Match(line);
+                Match nm = PresetCommentRx.Match(rawTrim);
                 if (nm.Success && string.IsNullOrEmpty(customPresetLabel))
                 {
                     string candidate = nm.Groups[1].Value.Trim();
@@ -1048,30 +1389,150 @@ namespace BiwamasuMixerGui
                     }
                     continue;
                 }
+                if (rawTrim.StartsWith("#") || rawTrim.StartsWith(";") || rawTrim.StartsWith("//"))
+                {
+                    continue;
+                }
+
+                string line = NormalizeEqDirectiveLine(rawTrim);
+                if (line.Length == 0) continue;
+
+                if (line.StartsWith("Channel:", StringComparison.OrdinalIgnoreCase))
+                {
+                    string chSpec = line.Substring(8).Trim().ToUpperInvariant();
+                    if (chSpec != "ALL" && chSpec != "L R" && chSpec != "R L" && chSpec != "1 2" && chSpec != "FL FR")
+                    {
+                        throw new InvalidDataException(string.Format(
+                            "行 {0}: 左右独立チャンネル指定 ({1}) には対応していません。両耳共通のステレオEQ設定を指定してください。",
+                            i + 1, line));
+                    }
+                    continue;
+                }
+
+                if (line.StartsWith("GraphicEQ:", StringComparison.OrdinalIgnoreCase) ||
+                    line.StartsWith("Include:", StringComparison.OrdinalIgnoreCase) ||
+                    line.StartsWith("Convolution:", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException(string.Format(
+                        "行 {0}: 未対応の Equalizer APO 構文 ({1}) が含まれています。\r\n本機はパラメトリックEQ形式 (Filter 1: ON PK/LSC/HSC ...) または .peace ファイルに対応しています。",
+                        i + 1, line.Split(':')[0] + ":"));
+                }
 
                 Match pm = PreampRx.Match(line);
                 if (pm.Success)
                 {
-                    preampDb = double.Parse(pm.Groups[1].Value, CultureInfo.InvariantCulture);
+                    double pVal;
+                    if (!TryParseStrictNumber(pm.Groups[1].Value, out pVal))
+                    {
+                        throw new InvalidDataException(string.Format(
+                            "行 {0}: Preamp の数値を読み取れませんでした ({1})。小数点にはピリオド (.) を使用してください。",
+                            i + 1, rawTrim));
+                    }
+                    preampDb += pVal;
                     continue;
                 }
-
-                Match fm = FilterRx.Match(line);
-                if (fm.Success)
+                if (Regex.IsMatch(line, @"^Preamp\s*[:=]", RegexOptions.IgnoreCase))
                 {
-                    bool isOn = string.Equals(fm.Groups[1].Value, "ON", StringComparison.OrdinalIgnoreCase);
-                    string kindStr = fm.Groups[2].Value.ToUpperInvariant();
-                    double fc = double.Parse(fm.Groups[3].Value.Replace(",", ""), CultureInfo.InvariantCulture);
-                    double gdb = double.Parse(fm.Groups[4].Value, CultureInfo.InvariantCulture);
-                    double q = fm.Groups[5].Success
-                        ? double.Parse(fm.Groups[5].Value, CultureInfo.InvariantCulture)
-                        : ((kindStr == "PK" || kindStr == "PEQ") ? 1.41 : 0.71);
+                    throw new InvalidDataException(string.Format(
+                        "行 {0}: Preamp 行の書式が正しくありません ({1})。\r\n例: Preamp: -4.0 dB",
+                        i + 1, rawTrim));
+                }
+
+                Match fh = FilterHeadRx.Match(line);
+                if (fh.Success)
+                {
+                    bool isOn = string.Equals(fh.Groups[1].Value, "ON", StringComparison.OrdinalIgnoreCase);
+                    string kindStr = fh.Groups[2].Value.ToUpperInvariant();
+                    string rest = fh.Groups[3].Success ? fh.Groups[3].Value.Trim() : "";
+
+                    if (kindStr == "NONE")
+                    {
+                        continue;
+                    }
+
+                    bool supportedKind = (kindStr == "PK" || kindStr == "PEQ" ||
+                                          kindStr == "LSC" || kindStr == "LS" ||
+                                          kindStr == "HSC" || kindStr == "HS");
+                    if (!supportedKind)
+                    {
+                        if (!isOn) continue;
+                        throw new InvalidDataException(string.Format(
+                            "行 {0}: 未対応のフィルター種類 ({1}) が有効になっています。\r\n本機は PK (ピーキング) / LSC (ローシェルフ) / HSC (ハイシェルフ) のみ対応しています。\r\n該当行: {2}",
+                            i + 1, kindStr, rawTrim));
+                    }
+
+                    Match fb = FilterBodyRx.Match(rest);
+                    if (!fb.Success)
+                    {
+                        if (!isOn) continue;
+                        throw new InvalidDataException(string.Format(
+                            "行 {0}: Filter 行の書式を読み取れませんでした。\r\n例: Filter 1: ON PK Fc 1000 Hz Gain -2.5 dB Q 1.41\r\n該当行: {1}",
+                            i + 1, rawTrim));
+                    }
+
+                    double fc, gdb;
+                    if (!TryParseStrictNumber(fb.Groups[1].Value, out fc) ||
+                        !TryParseStrictNumber(fb.Groups[2].Value, out gdb))
+                    {
+                        if (!isOn) continue;
+                        throw new InvalidDataException(string.Format(
+                            "行 {0}: 周波数またはゲインの数値が不正です（小数点にはピリオドを使用してください）。\r\n該当行: {1}",
+                            i + 1, rawTrim));
+                    }
+
+                    double q;
+                    if (fb.Groups[3].Success)
+                    {
+                        if (!TryParseStrictNumber(fb.Groups[3].Value, out q))
+                        {
+                            if (!isOn) continue;
+                            throw new InvalidDataException(string.Format(
+                                "行 {0}: Q値の数値が不正です。\r\n該当行: {1}",
+                                i + 1, rawTrim));
+                        }
+                    }
+                    else if (fb.Groups[4].Success)
+                    {
+                        double bwOct;
+                        if (!TryParseStrictNumber(fb.Groups[4].Value, out bwOct))
+                        {
+                            if (!isOn) continue;
+                            throw new InvalidDataException(string.Format(
+                                "行 {0}: BW Oct の数値が不正です。\r\n該当行: {1}",
+                                i + 1, rawTrim));
+                        }
+                        q = BandwidthOctavesToQ(bwOct);
+                        if (q <= 0.0)
+                        {
+                            if (!isOn) continue;
+                            throw new InvalidDataException(string.Format(
+                                "行 {0}: BW Oct の値が範囲外です ({1})。",
+                                i + 1, rawTrim));
+                        }
+                    }
+                    else
+                    {
+                        q = (kindStr == "PK" || kindStr == "PEQ") ? 1.41 : 0.70710678;
+                    }
 
                     EqBandSpec spec = new EqBandSpec();
                     spec.Enabled = isOn;
                     if (kindStr == "PK" || kindStr == "PEQ") spec.Kind = FilterKind.PK;
                     else if (kindStr == "LSC" || kindStr == "LS") spec.Kind = FilterKind.LSC;
                     else spec.Kind = FilterKind.HSC;
+
+                    if (isOn && (fc < 10.0 || fc > 23500.0 || gdb < -30.0 || gdb > 24.0 || q < 0.06 || q > 30.0))
+                    {
+                        EqBandSpec rawCheck = new EqBandSpec();
+                        rawCheck.Enabled = true;
+                        rawCheck.Kind = spec.Kind;
+                        rawCheck.FrequencyHz = fc;
+                        rawCheck.GainDb = gdb;
+                        rawCheck.Q = q;
+                        string rangeErr;
+                        ComputeBiquad(rawCheck, parsedBands.Count + 1, out rangeErr);
+                        throw new InvalidDataException(string.Format("行 {0}: {1}\r\n該当行: {2}", i + 1, rangeErr, rawTrim));
+                    }
 
                     spec.FrequencyHz = Clamp(fc, 10.0, 23500.0);
                     spec.GainDb = Clamp(gdb, -30.0, 24.0);
@@ -1082,10 +1543,18 @@ namespace BiwamasuMixerGui
                         string err;
                         if (ComputeBiquad(spec, parsedBands.Count + 1, out err) == null)
                         {
-                            throw new InvalidDataException(err + "\r\n該当行: " + line);
+                            throw new InvalidDataException(string.Format("行 {0}: {1}\r\n該当行: {2}", i + 1, err, rawTrim));
                         }
                     }
                     parsedBands.Add(spec);
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, @"^Filter\s*\d*\s*:", RegexOptions.IgnoreCase))
+                {
+                    throw new InvalidDataException(string.Format(
+                        "行 {0}: Filter 行の書式が正しくありません ({1})。",
+                        i + 1, rawTrim));
                 }
             }
 
@@ -1134,8 +1603,13 @@ namespace BiwamasuMixerGui
         private static EqProfile PackBandsIntoProfile(List<EqBandSpec> parsedBands, double preampDb, string sourceLabel)
         {
             string preErr;
-            preampDb = Clamp(preampDb, -36.0, 12.0);
-            if (ComputePreampLinear(preampDb, out preErr) <= 0.0f && preErr != null)
+            if (!IsFinite(preampDb) || preampDb < -36.0 || preampDb > 12.0)
+            {
+                throw new InvalidDataException(string.Format(
+                    "プリアンプ ({0:0.0} dB) が対応範囲外です。-36.0 〜 +12.0 dB の範囲で指定してください。",
+                    preampDb));
+            }
+            if (ComputePreampLinear(preampDb, out preErr) <= 0.0f || preErr != null)
             {
                 throw new InvalidDataException(preErr);
             }
@@ -1213,9 +1687,173 @@ namespace BiwamasuMixerGui
 
         public static double Clamp(double v, double min, double max)
         {
+            if (double.IsNaN(v)) return min;
             if (v < min) return min;
             if (v > max) return max;
             return v;
+        }
+
+        public static bool BiquadCoeffStable(float[] c)
+        {
+            if (c == null || c.Length < 5) return false;
+            if (!FloatSane(c[0]) || !FloatSane(c[1]) || !FloatSane(c[2]) || !FloatSane(c[3]) || !FloatSane(c[4]))
+            {
+                return false;
+            }
+            if (!(c[4] > -1.0f && c[4] < 1.0f)) return false;
+            return (1.0f + c[4]) > Math.Abs(c[3]);
+        }
+
+        public static uint ComputeCrc32(byte[] data)
+        {
+            uint c = 0xffffffffu;
+            for (int i = 0; i < data.Length; i++)
+            {
+                c ^= data[i];
+                for (int k = 0; k < 8; k++)
+                {
+                    c = ((c & 1u) != 0u) ? ((c >> 1) ^ 0xedb88320u) : (c >> 1);
+                }
+            }
+            return ~c;
+        }
+
+        public static bool CoeffsMatchProfile(EqProfile profile, float devPreamp, float[][] devCoeffs)
+        {
+            if (profile == null || devCoeffs == null || devCoeffs.Length != 11) return false;
+            string err;
+            float expPre = ComputePreampLinear(profile.PreampDb, out err);
+            if (err != null || Math.Abs(expPre - devPreamp) > 1.5e-3f) return false;
+
+            for (int i = 0; i < 11; i++)
+            {
+                float[] expC = ComputeBiquad(profile.Bands[i], i + 1, out err);
+                if (expC == null || devCoeffs[i] == null || devCoeffs[i].Length < 5) return false;
+                for (int j = 0; j < 5; j++)
+                {
+                    if (Math.Abs(expC[j] - devCoeffs[i][j]) > 2.0e-4f) return false;
+                }
+            }
+            return true;
+        }
+
+        public static bool AreAllCoeffsFlat(float devPreamp, float[][] devCoeffs)
+        {
+            if (Math.Abs(devPreamp - 1.0f) > 1.0e-4f || devCoeffs == null || devCoeffs.Length != 11) return false;
+            for (int i = 0; i < 11; i++)
+            {
+                float[] c = devCoeffs[i];
+                if (c == null || c.Length < 5) return false;
+                if (Math.Abs(c[0] - 1.0f) > 1.0e-5f || Math.Abs(c[1]) > 1.0e-5f ||
+                    Math.Abs(c[2]) > 1.0e-5f || Math.Abs(c[3]) > 1.0e-5f || Math.Abs(c[4]) > 1.0e-5f)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public static bool TryReconstructProfileFromCoeffs(float devPreamp, float[][] devCoeffs, string label, out EqProfile result)
+        {
+            result = null;
+            if (!FloatSane(devPreamp) || devPreamp < 0.01f || devPreamp > 4.0f || devCoeffs == null || devCoeffs.Length != 11)
+            {
+                return false;
+            }
+
+            EqProfile p = new EqProfile();
+            p.PreampDb = Clamp(Math.Round(20.0 * Math.Log10(devPreamp) * 10.0) / 10.0, -36.0, 12.0);
+            p.SourceLabel = string.IsNullOrEmpty(label) ? "本体メモリ保存済み" : label;
+
+            const double fs = 48000.0;
+            for (int i = 0; i < 11; i++)
+            {
+                float[] c = devCoeffs[i];
+                if (!BiquadCoeffStable(c)) return false;
+
+                double nb0 = c[0], nb1 = c[1], nb2 = c[2], na1 = c[3], na2 = c[4];
+                if (Math.Abs(nb0 - 1.0) < 1.0e-5 && Math.Abs(nb1) < 1.0e-5 &&
+                    Math.Abs(nb2) < 1.0e-5 && Math.Abs(na1) < 1.0e-5 && Math.Abs(na2) < 1.0e-5)
+                {
+                    p.Bands[i].Enabled = false;
+                    p.Bands[i].GainDb = 0.0;
+                    continue;
+                }
+
+                double denom1MinusA2 = 1.0 - na2;
+                double denom1PlusA2 = 1.0 + na2;
+                if (Math.Abs(denom1MinusA2) < 1.0e-7 || Math.Abs(denom1PlusA2) < 1.0e-7)
+                {
+                    p.Bands[i].Enabled = false;
+                    p.Bands[i].GainDb = 0.0;
+                    continue;
+                }
+
+                FilterKind kind;
+                double fc, gdb, q;
+                double sumPlus = 1.0 + na1 + na2;
+                double sumMinus = 1.0 - na1 + na2;
+                double numPlus = nb0 + nb1 + nb2;
+                double numMinus = nb0 - nb1 + nb2;
+                if (sumPlus <= 1.0e-11 || sumMinus <= 1.0e-11 || numPlus <= 1.0e-11 || numMinus <= 1.0e-11)
+                {
+                    p.Bands[i].Enabled = false;
+                    p.Bands[i].GainDb = 0.0;
+                    continue;
+                }
+
+                double dcDb = 20.0 * Math.Log10(numPlus / sumPlus);
+                double nyqDb = 20.0 * Math.Log10(numMinus / sumMinus);
+
+                if (Math.Abs(dcDb) < 0.08 && Math.Abs(nyqDb) < 0.08 && Math.Abs(nb1 - na1) <= 1.0e-3)
+                {
+                    kind = FilterKind.PK;
+                    double aSq = (nb0 - nb2) / denom1MinusA2;
+                    if (aSq <= 1.0e-6) return false;
+                    double a = Math.Sqrt(aSq);
+                    double a0 = 2.0 / denom1PlusA2;
+                    double w0 = 2.0 * Math.Atan(Math.Sqrt(sumPlus / sumMinus));
+                    double alpha = 0.5 * denom1MinusA2 * a0 * a;
+                    if (alpha <= 1.0e-9) return false;
+                    fc = w0 * fs / (2.0 * Math.PI);
+                    gdb = 40.0 * Math.Log10(a);
+                    q = Math.Sin(w0) / (2.0 * alpha);
+                }
+                else
+                {
+                    double a = (nb0 - nb2) / denom1MinusA2;
+                    if (a <= 1.0e-4) return false;
+                    if (Math.Abs(a - 1.0) < 1.0e-4)
+                    {
+                        p.Bands[i].Enabled = false;
+                        p.Bands[i].GainDb = 0.0;
+                        continue;
+                    }
+                    double sumDenom = (nb0 + nb2) / a + denom1PlusA2;
+                    if (Math.Abs(sumDenom) < 1.0e-7) return false;
+                    double a0 = 4.0 * (a + 1.0) / sumDenom;
+                    kind = (Math.Abs(dcDb) >= Math.Abs(nyqDb)) ? FilterKind.LSC : FilterKind.HSC;
+                    double tanHalfSq = (kind == FilterKind.LSC)
+                        ? (a * sumPlus / sumMinus)
+                        : (sumPlus / (a * sumMinus));
+                    double w0 = 2.0 * Math.Atan(Math.Sqrt(Math.Max(1.0e-12, tanHalfSq)));
+                    double sa = 0.5 * denom1MinusA2 * a0;
+                    double alpha = sa / (2.0 * Math.Sqrt(a));
+                    if (alpha <= 1.0e-9) return false;
+                    fc = w0 * fs / (2.0 * Math.PI);
+                    gdb = 40.0 * Math.Log10(a);
+                    q = Math.Sin(w0) / (2.0 * alpha);
+                }
+
+                p.Bands[i].Enabled = true;
+                p.Bands[i].Kind = kind;
+                p.Bands[i].FrequencyHz = Clamp(Math.Round(fc * 10.0) / 10.0, 10.0, 23500.0);
+                p.Bands[i].GainDb = Clamp(Math.Round(gdb * 10.0) / 10.0, -30.0, 24.0);
+                p.Bands[i].Q = Clamp(Math.Round(q * 100.0) / 100.0, 0.06, 30.0);
+            }
+
+            result = p;
+            return true;
         }
     }
 
@@ -1230,8 +1868,14 @@ namespace BiwamasuMixerGui
         private bool _showScaleLabels = true;
         private double[] _scaleTicks = new double[] { -60, -45, -30, -15, 0, 6 };
         private bool _dragging = false;
+        private bool _interacting = false;
+        private bool _thumbGrabbedWithoutMove = false;
+        private bool _pendingGrooveClick = false;
+        private bool _grooveReleased = false;
+        private int _downX = 0;
         private bool _hovering = false;
         private readonly Font _tickFont;
+        private readonly System.Windows.Forms.Timer _grooveClickTimer;
 
         public event EventHandler ValueChanged;
         public event EventHandler DragStarted;
@@ -1248,13 +1892,24 @@ namespace BiwamasuMixerGui
                 true);
             TabStop = true;
             _tickFont = UiScale.CreateSmallFont();
+            _grooveClickTimer = new System.Windows.Forms.Timer();
+            _grooveClickTimer.Interval = 240;
+            _grooveClickTimer.Tick += OnGrooveClickTimerTick;
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && _tickFont != null)
+            if (disposing)
             {
-                _tickFont.Dispose();
+                if (_grooveClickTimer != null)
+                {
+                    _grooveClickTimer.Stop();
+                    _grooveClickTimer.Dispose();
+                }
+                if (_tickFont != null)
+                {
+                    _tickFont.Dispose();
+                }
             }
             base.Dispose(disposing);
         }
@@ -1288,6 +1943,13 @@ namespace BiwamasuMixerGui
 
         public void SetValueSilent(double value)
         {
+            if (_pendingGrooveClick)
+            {
+                _grooveClickTimer.Stop();
+                _pendingGrooveClick = false;
+                _grooveReleased = false;
+                EndInteraction();
+            }
             double clamped = EqDspMath.Clamp(Math.Round(value * 10.0) / 10.0, _minDb, _maxDb);
             if (Math.Abs(clamped - _valueDb) > 0.001)
             {
@@ -1534,30 +2196,133 @@ namespace BiwamasuMixerGui
             Invalidate();
         }
 
+        private void BeginInteraction()
+        {
+            if (!_interacting)
+            {
+                _interacting = true;
+                if (DragStarted != null) DragStarted(this, EventArgs.Empty);
+            }
+        }
+
+        private void EndInteraction()
+        {
+            if (_interacting)
+            {
+                _interacting = false;
+                if (DragCompleted != null) DragCompleted(this, EventArgs.Empty);
+            }
+        }
+
+        private void OnGrooveClickTimerTick(object sender, EventArgs e)
+        {
+            _grooveClickTimer.Stop();
+            if (!_pendingGrooveClick) return;
+            _pendingGrooveClick = false;
+
+            if (!Enabled)
+            {
+                _grooveReleased = false;
+                EndInteraction();
+                return;
+            }
+
+            if (_grooveReleased)
+            {
+                _grooveReleased = false;
+                ValueDb = XToDb(_downX, GetTrackBounds());
+                EndInteraction();
+            }
+            else
+            {
+                _dragging = true;
+                _thumbGrabbedWithoutMove = false;
+                Invalidate();
+                ValueDb = XToDb(_downX, GetTrackBounds());
+            }
+        }
+
+        protected override void OnEnabledChanged(EventArgs e)
+        {
+            base.OnEnabledChanged(e);
+            if (!Enabled)
+            {
+                _grooveClickTimer.Stop();
+                _pendingGrooveClick = false;
+                _grooveReleased = false;
+                _dragging = false;
+                _thumbGrabbedWithoutMove = false;
+                if (Capture) Capture = false;
+                EndInteraction();
+                Invalidate();
+            }
+        }
+
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
             if (!Enabled || e.Button != MouseButtons.Left) return;
             Focus();
 
-            if (e.Clicks >= 2)
+            if (e.Clicks >= 2 || _pendingGrooveClick)
             {
+                _grooveClickTimer.Stop();
+                _pendingGrooveClick = false;
+                _grooveReleased = false;
+                _dragging = false;
+                _thumbGrabbedWithoutMove = false;
+                if (Capture) Capture = false;
+                BeginInteraction();
                 ValueDb = _defaultResetDb;
-                if (DragCompleted != null) DragCompleted(this, EventArgs.Empty);
+                Invalidate();
+                EndInteraction();
                 return;
             }
 
-            _dragging = true;
-            Capture = true;
-            if (DragStarted != null) DragStarted(this, EventArgs.Empty);
-            ValueDb = XToDb(e.X, GetTrackBounds());
+            Rectangle track = GetTrackBounds();
+            int thumbX = DbToX(_valueDb, track);
+            _downX = e.X;
+
+            if (Math.Abs(e.X - thumbX) <= UiScale.Px(8))
+            {
+                _dragging = true;
+                _thumbGrabbedWithoutMove = true;
+                Capture = true;
+                BeginInteraction();
+                Invalidate();
+            }
+            else
+            {
+                _pendingGrooveClick = true;
+                _grooveReleased = false;
+                Capture = true;
+                BeginInteraction();
+                _grooveClickTimer.Stop();
+                _grooveClickTimer.Start();
+            }
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            if (_dragging && Enabled)
+            if (!Enabled) return;
+
+            if (_pendingGrooveClick && !_grooveReleased && Math.Abs(e.X - _downX) >= UiScale.Px(4))
             {
+                _grooveClickTimer.Stop();
+                _pendingGrooveClick = false;
+                _dragging = true;
+                _thumbGrabbedWithoutMove = false;
+                Invalidate();
+            }
+
+            if (_dragging)
+            {
+                if (_thumbGrabbedWithoutMove)
+                {
+                    if (Math.Abs(e.X - _downX) < UiScale.Px(2)) return;
+                    _thumbGrabbedWithoutMove = false;
+                }
                 ValueDb = XToDb(e.X, GetTrackBounds());
             }
         }
@@ -1565,12 +2330,73 @@ namespace BiwamasuMixerGui
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+            if (_pendingGrooveClick && !_grooveReleased)
+            {
+                _grooveReleased = true;
+                if (Capture) Capture = false;
+                return;
+            }
             if (_dragging)
             {
                 _dragging = false;
+                _thumbGrabbedWithoutMove = false;
                 Capture = false;
                 Invalidate();
-                if (DragCompleted != null) DragCompleted(this, EventArgs.Empty);
+                EndInteraction();
+            }
+        }
+
+        protected override void OnMouseCaptureChanged(EventArgs e)
+        {
+            base.OnMouseCaptureChanged(e);
+            if (_pendingGrooveClick && !_grooveReleased && !Capture)
+            {
+                _grooveClickTimer.Stop();
+                _pendingGrooveClick = false;
+                EndInteraction();
+                return;
+            }
+            if (_dragging && !Capture)
+            {
+                _dragging = false;
+                _thumbGrabbedWithoutMove = false;
+                Invalidate();
+                EndInteraction();
+            }
+        }
+
+        internal static bool VerifyGrooveDoubleClickSafetyForTest()
+        {
+            using (GainSlider gs = new GainSlider())
+            {
+                gs.Size = new Size(300, 34);
+                gs.MinimumDb = -60.0;
+                gs.MaximumDb = 6.0;
+                gs.DefaultResetDb = -45.0;
+                gs.SetValueSilent(-30.0);
+
+                List<double> seen = new List<double>();
+                gs.ValueChanged += delegate { seen.Add(gs.ValueDb); };
+
+                // Simulate double-clicking near the +6 dB right end of the groove
+                gs.OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, 288, 12, 0));
+                gs.OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, 288, 12, 0));
+                gs.OnMouseDown(new MouseEventArgs(MouseButtons.Left, 2, 288, 12, 0));
+                gs.OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, 288, 12, 0));
+
+                if (Math.Abs(gs.ValueDb - (-45.0)) > 0.01) return false;
+                for (int i = 0; i < seen.Count; i++)
+                {
+                    if (seen[i] > -30.0) return false;
+                }
+                if (gs._interacting || gs._pendingGrooveClick || gs._dragging) return false;
+
+                // Simulate dragging from groove (immediate response once moved >= 4px)
+                gs.OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, 250, 12, 0));
+                gs.OnMouseMove(new MouseEventArgs(MouseButtons.Left, 1, 260, 12, 0));
+                gs.OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, 260, 12, 0));
+                if (gs.ValueDb <= -30.0 || gs._interacting) return false;
+                return true;
             }
         }
 
@@ -2024,7 +2850,7 @@ namespace BiwamasuMixerGui
 
                     uint needed;
                     SetupDiGetDeviceInterfaceDetail(set, ref iface, IntPtr.Zero, 0, out needed, IntPtr.Zero);
-                    if (needed == 0) continue;
+                    if (needed < 8) continue;
 
                     IntPtr detail = Marshal.AllocHGlobal((int)needed);
                     try
@@ -2124,12 +2950,16 @@ namespace BiwamasuMixerGui
 
         public byte[] ReadPage(byte page)
         {
-            byte[] raw = Exchange(new byte[] { 0x10, page }, true);
-            if (raw[6] != page)
+            for (int retry = 0; retry < 3; retry++)
             {
-                throw new IOException("HIDページ番号不一致");
+                byte[] raw = Exchange(new byte[] { 0x10, page }, true);
+                if (raw[6] == page)
+                {
+                    return raw;
+                }
+                Thread.Sleep(5);
             }
-            return raw;
+            throw new IOException("HIDページ番号不一致");
         }
 
         private static uint[] WordsFromPage(byte[] raw)
@@ -2172,7 +3002,7 @@ namespace BiwamasuMixerGui
             s.MasterDb = Math.Round(ToSigned32(w3[2]) / 100.0, 1);
             s.PcTrimDb = Math.Round(ToSigned32(w3[3]) / 100.0, 1);
             s.WindowsMasterVolDb = Math.Round(ToSigned32(w3[4]) / 100.0, 1);
-            s.WindowsMuted = (w3[7] & 1u) != 0;
+            s.WindowsMuted = ((w3[7] & 1u) != 0) || ((w3[7] & 6u) == 6u);
             s.CrcErrors = w0[4];
             s.FlashSaves = w3[10];
             s.ClipCount = w2[8];
@@ -2196,17 +3026,78 @@ namespace BiwamasuMixerGui
             Exchange(cmd, false);
         }
 
-        public void WriteEqProfile(EqProfile profile)
+        public bool TryReadDeviceEq(out float preampLinear, out float[][] coeffs)
         {
-            string err;
-            float preampLin = EqDspMath.ComputePreampLinear(profile.PreampDb, out err);
-            if (err != null) throw new InvalidOperationException(err);
-
-            float[][] coeffs = new float[11][];
-            for (int i = 0; i < 11; i++)
+            preampLinear = 1.0f;
+            coeffs = null;
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                coeffs[i] = EqDspMath.ComputeBiquad(profile.Bands[i], i + 1, out err);
-                if (coeffs[i] == null) throw new InvalidOperationException(err);
+                try
+                {
+                    byte[] eqBytes = new byte[56 * 4];
+                    uint expectedCrc = 0;
+                    for (byte pg = 4; pg <= 8; pg++)
+                    {
+                        byte[] raw = ReadPage(pg);
+                        uint[] w = WordsFromPage(raw);
+                        int baseIdx = (pg - 4) * 12;
+                        for (int k = 0; k < 12 && (baseIdx + k) < 56; k++)
+                        {
+                            byte[] wb = BitConverter.GetBytes(w[k]);
+                            Array.Copy(wb, 0, eqBytes, (baseIdx + k) * 4, 4);
+                        }
+                        if (pg == 8) expectedCrc = w[12];
+                    }
+
+                    if (EqDspMath.ComputeCrc32(eqBytes) != expectedCrc)
+                    {
+                        continue;
+                    }
+
+                    float pre = BitConverter.ToSingle(eqBytes, 0);
+                    if (float.IsNaN(pre) || float.IsInfinity(pre) || pre < 0.01f || pre > 4.0f)
+                    {
+                        return false;
+                    }
+
+                    float[][] parsed = new float[11][];
+                    for (int b = 0; b < 11; b++)
+                    {
+                        float[] c = new float[5];
+                        for (int j = 0; j < 5; j++)
+                        {
+                            c[j] = BitConverter.ToSingle(eqBytes, (1 + b * 5 + j) * 4);
+                        }
+                        if (!EqDspMath.BiquadCoeffStable(c)) return false;
+                        parsed[b] = c;
+                    }
+
+                    preampLinear = pre;
+                    coeffs = parsed;
+                    return true;
+                }
+                catch
+                {
+                    // Older firmware only implements pages 0..3; ignore gracefully without dropping connection.
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        public void WriteRawEqCoeffs(float preampLin, float[][] coeffs)
+        {
+            if (coeffs == null || coeffs.Length != 11) throw new ArgumentException("coeffs");
+            byte[] pcmd = new byte[5];
+            pcmd[0] = 0x43;
+            Array.Copy(BitConverter.GetBytes(preampLin), 0, pcmd, 1, 4);
+
+            // Begin atomic EQ staging on updated firmware; on older firmware 0x41/0x44 are no-ops
+            // so sending attenuating preamp first prevents any momentary uncompensated boost.
+            Exchange(new byte[] { 0x41, 0xA5 }, false);
+            if (preampLin < 1.0f)
+            {
+                Exchange(pcmd, false);
             }
 
             for (int b = 0; b < 11; b++)
@@ -2221,10 +3112,24 @@ namespace BiwamasuMixerGui
                 Exchange(cmd, false);
             }
 
-            byte[] pcmd = new byte[5];
-            pcmd[0] = 0x43;
-            Array.Copy(BitConverter.GetBytes(preampLin), 0, pcmd, 1, 4);
             Exchange(pcmd, false);
+            Exchange(new byte[] { 0x44, 0xA5 }, false);
+        }
+
+        public void WriteEqProfile(EqProfile profile)
+        {
+            string err;
+            float preampLin = EqDspMath.ComputePreampLinear(profile.PreampDb, out err);
+            if (err != null) throw new InvalidOperationException(err);
+
+            float[][] coeffs = new float[11][];
+            for (int i = 0; i < 11; i++)
+            {
+                coeffs[i] = EqDspMath.ComputeBiquad(profile.Bands[i], i + 1, out err);
+                if (coeffs[i] == null) throw new InvalidOperationException(err);
+            }
+
+            WriteRawEqCoeffs(preampLin, coeffs);
         }
 
         public void SetTestTone(bool on)
@@ -2445,13 +3350,14 @@ namespace BiwamasuMixerGui
                     "・微小な背景ノイズまで一緒に増幅されるため、S/N比が悪化（サーッというノイズが増加）します。\r\n\r\n" +
                     "【音量が足りないときの正しい対処法】\r\n" +
                     "バランス調整は「大きすぎる方をマイナスに下げる」形で行い、合計 0 dB 以下を保ってください。\r\n" +
-                    "マスター音量を 0 dB まで上げてもヘッドホンの音量が小さい場合は、デジタルでプラス増幅するのではなく、Pico Audio Pack 基板上にある小さなスイッチを「LO GAIN」から「HI GAIN」へ切り替えてください。"),
+                    "マスター音量を 0 dB まで上げてもヘッドホンの音量が小さい場合は、デジタルでプラス増幅するのではなく、いったんヘッドホンを耳から外してマスター音量を下げてから、Pico Audio Pack 基板上にある小さなスイッチを「LO GAIN」から「HI GAIN」へ切り替えて再調整してください。"),
 
                 new HelpTopic(
                     "4. イコライザー欄と下部ボタン",
                     "■ イコライザー [有効にする]\r\n" +
                     "マイコン内蔵の最大11バンド・パラメトリックEQの ON / OFF を切り替えます。\r\n" +
                     "Switch 2音とPC音がミックスされた後の音声（自分の耳に聴こえる音）に適用されます。OBSへ送られる録音用音声には適用されません。\r\n" +
+                    "※マイナスのプリアンプを設定している場合、EQをOFFにするとプリアンプによる減衰も解除されるため、その分だけ音量が上がります（切り替え自体は滑らかにフェードします）。\r\n" +
                     "※注意：PC側の Equalizer APO（Peace）等のEQソフトが「ヘッドホン (Biwamasu Mixer)」にも掛かっていると、PC音にだけ二重でEQが掛かってしまいます。PC側のEQソフトをOFFにするか、「Biwamasu Mixer」にはEQが掛からない設定にしておいてください（Device Selector 等で他のヘッドホンにだけ掛かる設定になっていればそのままで大丈夫です）。\r\n\r\n" +
                     "■ [ファイル読込...] / [AI・テキスト貼付...] / [詳細設定...]\r\n" +
                     "・[ファイル読込...]：Peace の「.peace」ファイルや Equalizer APO / AutoEQ 形式の「.txt」ファイルを読み込んでマイコンへ反映します（ファイルをウィンドウへ直接ドラッグ＆ドロップしても読み込めます）。\r\n" +
@@ -2726,6 +3632,10 @@ namespace BiwamasuMixerGui
             string stem = safe.ToString().Trim('_');
             if (stem.Length == 0) stem = "favorite";
             if (stem.Length > 40) stem = stem.Substring(0, 40);
+            if (Regex.IsMatch(stem, @"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", RegexOptions.IgnoreCase))
+            {
+                stem = "_" + stem;
+            }
 
             string candidate = Path.Combine(_dir, stem + ".txt");
             int seq = 2;
@@ -2758,17 +3668,17 @@ namespace BiwamasuMixerGui
                     fp.Name = v;
                 }
                 else if (string.Equals(k, "MasterDb", StringComparison.OrdinalIgnoreCase) &&
-                         double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out dv))
+                         EqDspMath.TryParseStrictNumber(v, out dv))
                 {
                     fp.MasterDb = EqDspMath.Clamp(dv, -60.0, 6.0);
                 }
                 else if (string.Equals(k, "GameDb", StringComparison.OrdinalIgnoreCase) &&
-                         double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out dv))
+                         EqDspMath.TryParseStrictNumber(v, out dv))
                 {
                     fp.GameDb = EqDspMath.Clamp(dv, -60.0, 12.0);
                 }
                 else if (string.Equals(k, "PcTrimDb", StringComparison.OrdinalIgnoreCase) &&
-                         double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out dv))
+                         EqDspMath.TryParseStrictNumber(v, out dv))
                 {
                     fp.PcTrimDb = EqDspMath.Clamp(dv, -24.0, 12.0);
                 }
@@ -3394,8 +4304,15 @@ namespace BiwamasuMixerGui
                     snap.FilePath = existing.FilePath;
                 }
                 snap.Name = dlg.EnteredName;
-                _store.Save(snap);
-                ReloadList(snap.Name);
+                try
+                {
+                    _store.Save(snap);
+                    ReloadList(snap.Name);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "お気に入りの保存に失敗しました: " + ex.Message, "保存エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
 
@@ -3414,8 +4331,15 @@ namespace BiwamasuMixerGui
             FavoritePreset snap = _captureCurrentCallback();
             snap.Name = sel.Name;
             snap.FilePath = sel.FilePath;
-            _store.Save(snap);
-            ReloadList(snap.Name);
+            try
+            {
+                _store.Save(snap);
+                ReloadList(snap.Name);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "お気に入りの上書き保存に失敗しました: " + ex.Message, "保存エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void OnRenameSelectedClick(object sender, EventArgs e)
@@ -3437,9 +4361,18 @@ namespace BiwamasuMixerGui
                     MessageBox.Show(this, "同じ名前のお気に入りが既に存在します。", "名前重複", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
+                string prevName = sel.Name;
                 sel.Name = dlg.EnteredName;
-                _store.Save(sel);
-                ReloadList(sel.Name);
+                try
+                {
+                    _store.Save(sel);
+                    ReloadList(sel.Name);
+                }
+                catch (Exception ex)
+                {
+                    sel.Name = prevName;
+                    MessageBox.Show(this, "名前の変更に失敗しました: " + ex.Message, "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
 
@@ -3454,17 +4387,28 @@ namespace BiwamasuMixerGui
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
             if (ans != DialogResult.Yes) return;
-            _store.Delete(sel);
-            ReloadList(null);
+            try
+            {
+                _store.Delete(sel);
+                ReloadList(null);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "削除に失敗しました: " + ex.Message, "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 
     internal sealed class EqEditorForm : Form
     {
         private readonly EqProfile _initialSnapshot;
-        private readonly bool _initialEqEnabled;
+        private bool _initialEqEnabled;
+        private float _initialHwPreamp;
+        private float[][] _initialHwCoeffs;
+        private bool _hasRawHwRestore;
         private readonly EqProfile _working;
         private readonly Action<EqProfile, bool, bool> _applyCallback;
+        private readonly Action<float, float[][], EqProfile, bool> _restoreRawCallback;
         private readonly Icon _appIcon;
         private string _currentEqDir;
 
@@ -3492,13 +4436,30 @@ namespace BiwamasuMixerGui
             string initialEqDir,
             Icon appIcon,
             Action<EqProfile, bool, bool> applyCallback)
+            : this(current, eqEnabled, initialEqDir, appIcon, applyCallback, 1.0f, null, null)
+        {
+        }
+
+        public EqEditorForm(
+            EqProfile current,
+            bool eqEnabled,
+            string initialEqDir,
+            Icon appIcon,
+            Action<EqProfile, bool, bool> applyCallback,
+            float initialHwPreamp,
+            float[][] initialHwCoeffs,
+            Action<float, float[][], EqProfile, bool> restoreRawCallback)
         {
             _initialSnapshot = current.Clone();
             _initialEqEnabled = eqEnabled;
+            _initialHwPreamp = initialHwPreamp;
+            _initialHwCoeffs = CloneCoeffs(initialHwCoeffs);
+            _hasRawHwRestore = (_initialHwCoeffs != null && restoreRawCallback != null);
             _working = current.Clone();
             _currentEqDir = initialEqDir;
             _appIcon = appIcon;
             _applyCallback = applyCallback;
+            _restoreRawCallback = restoreRawCallback;
 
             AutoScaleMode = AutoScaleMode.None;
             Font = UiScale.CreateUiFont();
@@ -3506,11 +4467,12 @@ namespace BiwamasuMixerGui
             Text = "イコライザー詳細設定";
             KeyPreview = true;
             AllowDrop = true;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true;
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
+            MinimumSize = new Size(UiScale.Px(680), UiScale.Px(420));
             ClientSize = new Size(UiScale.Px(780), UiScale.Px(604));
 
             _liveSendTimer = new System.Windows.Forms.Timer();
@@ -3812,7 +4774,12 @@ namespace BiwamasuMixerGui
                 _rowQ[i] = txtQ;
                 grid.Controls.Add(txtQ, 6, row);
             }
-            grpBands.Controls.Add(grid);
+            grid.MinimumSize = new Size(0, UiScale.Px(308));
+            Panel bandScroll = new Panel();
+            bandScroll.Dock = DockStyle.Fill;
+            bandScroll.AutoScroll = true;
+            bandScroll.Controls.Add(grid);
+            grpBands.Controls.Add(bandScroll);
 
             // 4. Standard dialog buttons (Help on left, OK/Cancel/Apply on right)
             TableLayoutPanel bottomBar = new TableLayoutPanel();
@@ -3893,12 +4860,52 @@ namespace BiwamasuMixerGui
 
         public string LastSelectedEqDir { get { return _currentEqDir; } }
 
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            try
+            {
+                Rectangle wa = Screen.FromControl(this).WorkingArea;
+                int maxW = Math.Max(MinimumSize.Width, wa.Width - UiScale.Px(16));
+                int maxH = Math.Max(MinimumSize.Height, wa.Height - UiScale.Px(16));
+                int nextW = Math.Min(Width, maxW);
+                int nextH = Math.Min(Height, maxH);
+                if (nextW != Width || nextH != Height)
+                {
+                    Size = new Size(nextW, nextH);
+                }
+                int nextLeft = Math.Max(wa.Left, Math.Min(Left, wa.Right - Width));
+                int nextTop = Math.Max(wa.Top, Math.Min(Top, wa.Bottom - Height));
+                Location = new Point(nextLeft, nextTop);
+            }
+            catch { }
+        }
+
+        private static float[][] CloneCoeffs(float[][] src)
+        {
+            if (src == null || src.Length != 11) return null;
+            float[][] copy = new float[11][];
+            for (int i = 0; i < 11; i++)
+            {
+                if (src[i] == null || src[i].Length < 5) return null;
+                copy[i] = new float[] { src[i][0], src[i][1], src[i][2], src[i][3], src[i][4] };
+            }
+            return copy;
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             _liveSendTimer.Stop();
-            if (!_confirmedExit && _livePreviewDirtiedHardware && _applyCallback != null)
+            if (!_confirmedExit && _livePreviewDirtiedHardware)
             {
-                try { _applyCallback(_initialSnapshot.Clone(), _initialEqEnabled, false); } catch { }
+                if (_hasRawHwRestore && _restoreRawCallback != null)
+                {
+                    try { _restoreRawCallback(_initialHwPreamp, CloneCoeffs(_initialHwCoeffs), _initialSnapshot.Clone(), _initialEqEnabled); } catch { }
+                }
+                else if (_applyCallback != null)
+                {
+                    try { _applyCallback(_initialSnapshot.Clone(), _initialEqEnabled, false); } catch { }
+                }
             }
             base.OnFormClosing(e);
         }
@@ -4003,9 +5010,8 @@ namespace BiwamasuMixerGui
             string normalized = raw.Trim()
                 .Replace("Hz", "").Replace("hz", "")
                 .Replace("dB", "").Replace("db", "")
-                .Replace("＋", "+").Replace("－", "-").Replace("−", "-")
                 .Trim();
-            return double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+            return EqDspMath.TryParseStrictNumber(normalized, out value);
         }
 
         private void CommitPreampText()
@@ -4331,6 +5337,8 @@ namespace BiwamasuMixerGui
             {
                 _applyCallback(_working.Clone(), _chkEqEnable.Checked, true);
                 CopyProfile(_working, _initialSnapshot);
+                _initialEqEnabled = _chkEqEnable.Checked;
+                _hasRawHwRestore = false;
                 _livePreviewDirtiedHardware = false;
             }
         }
@@ -4386,6 +5394,7 @@ namespace BiwamasuMixerGui
         private bool _deviceFlashLoaded;
         private uint _lastPollClipCount;
         private bool _recentClipDetected;
+        private bool _eqBypassLoudnessHint;
         private bool _syncingUi;
         private bool _userDraggingSlider;
         private bool _pendingParamSend;
@@ -4393,6 +5402,8 @@ namespace BiwamasuMixerGui
         private bool _testToneActive;
         private bool _hasUnsavedChanges;
         private byte _lastRxPinMode;
+        private float _lastHwPreampLin = 1.0f;
+        private float[][] _lastHwCoeffs;
 
         public MainForm(ushort vid, ushort pid)
         {
@@ -4661,6 +5672,38 @@ namespace BiwamasuMixerGui
             }
         }
 
+        public bool VerifyEqBypassHintForTest()
+        {
+            EqProfile saved = _eqProfile;
+            try
+            {
+                SetPreviewLevelsForTest(-45.0, 0.0, 0.0);
+                EqProfile deep = new EqProfile();
+                deep.PreampDb = -10.5;
+                _eqProfile = deep;
+
+                _syncingUi = true;
+                _chkEq.Checked = true;
+                _syncingUi = false;
+
+                _chkEq.Checked = false;
+                if (!_statusText.Text.Contains("-10.5 dB")) return false;
+
+                _chkEq.Checked = true;
+                if (_statusText.Text.Contains("-10.5 dB")) return false;
+                return true;
+            }
+            finally
+            {
+                _eqProfile = saved;
+                _eqBypassLoudnessHint = false;
+                _syncingUi = true;
+                _chkEq.Checked = false;
+                _syncingUi = false;
+                SetUnsavedState(false);
+            }
+        }
+
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
@@ -4687,9 +5730,7 @@ namespace BiwamasuMixerGui
                 {
                     try
                     {
-                        FlushPendingParamWrite();
-                        _hid.SaveToFlash();
-                        SetUnsavedState(false);
+                        ExecuteVerifiedFlashSave();
                     }
                     catch (Exception ex)
                     {
@@ -4890,6 +5931,7 @@ namespace BiwamasuMixerGui
             {
                 if (_syncingUi) return;
                 _recentClipDetected = false;
+                _eqBypassLoudnessHint = false;
                 _syncingUi = true;
                 ud.Value = ClampDec(gs.ValueDb, ud.Minimum, ud.Maximum);
                 UpdateGainWarningsAndThresholds();
@@ -4901,6 +5943,7 @@ namespace BiwamasuMixerGui
             {
                 if (_syncingUi) return;
                 _recentClipDetected = false;
+                _eqBypassLoudnessHint = false;
                 _syncingUi = true;
                 gs.SetValueSilent((double)ud.Value);
                 UpdateGainWarningsAndThresholds();
@@ -4957,6 +6000,14 @@ namespace BiwamasuMixerGui
             {
                 _statusText.ForeColor = Color.FromArgb(164, 20, 20);
                 _statusText.Text = "音割れ(クリッピング)を検知: マスター音量またはEQプリアンプを下げてください";
+            }
+            else if (_eqBypassLoudnessHint && !_chkEq.Checked && _eqProfile != null && _eqProfile.PreampDb <= -8.0)
+            {
+                _statusText.ForeColor = Color.FromArgb(140, 82, 0);
+                _statusText.Text = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "※EQオフによりプリアンプ ({0:0.0} dB) が解除され音量が上がっています",
+                    _eqProfile.PreampDb);
             }
             else if (_statusText.ForeColor != SystemColors.ControlText)
             {
@@ -5088,6 +6139,18 @@ namespace BiwamasuMixerGui
             FlushPendingParamWrite();
         }
 
+        private void WriteCurrentParamsOrThrow()
+        {
+            _sendDebounceTimer.Stop();
+            _pendingParamSend = false;
+            _hid.WriteParams(
+                _chkEq.Checked,
+                (double)_numGame.Value,
+                (double)_numMaster.Value,
+                (double)_numPc.Value,
+                _lastRxPinMode);
+        }
+
         private void FlushPendingParamWrite()
         {
             if (!_pendingParamSend) return;
@@ -5117,6 +6180,37 @@ namespace BiwamasuMixerGui
             }
         }
 
+        private void SyncEqFromDeviceIfSupported(MixerStatus st)
+        {
+            float devPre;
+            float[][] devCoeffs;
+            if (!_hid.TryReadDeviceEq(out devPre, out devCoeffs))
+            {
+                return;
+            }
+            _lastHwPreampLin = devPre;
+            _lastHwCoeffs = devCoeffs;
+
+            if (EqDspMath.CoeffsMatchProfile(_eqProfile, devPre, devCoeffs))
+            {
+                return;
+            }
+
+            if (EqDspMath.AreAllCoeffsFlat(devPre, devCoeffs) && !st.EqEnabled && !st.FlashConfigLoaded)
+            {
+                _eqProfile = new EqProfile();
+                return;
+            }
+
+            EqProfile reconstructed;
+            string lbl = st.FlashConfigLoaded ? "本体メモリ保存済み" : "本体の現在値";
+            if (EqDspMath.TryReconstructProfileFromCoeffs(devPre, devCoeffs, lbl, out reconstructed))
+            {
+                _eqProfile = reconstructed;
+                _hasLocalEqCache = true;
+            }
+        }
+
         public void RefreshFromDevice(bool manualAction)
         {
             try
@@ -5131,7 +6225,15 @@ namespace BiwamasuMixerGui
                 if (firstConnect || manualAction)
                 {
                     _lastPollClipCount = st.ClipCount;
-                    if (manualAction) _recentClipDetected = false;
+                    if (manualAction)
+                    {
+                        _recentClipDetected = false;
+                        _eqBypassLoudnessHint = false;
+                    }
+                    if (!_userDraggingSlider && !_pendingParamSend)
+                    {
+                        SyncEqFromDeviceIfSupported(st);
+                    }
                 }
                 else if (st.ClipCount > _lastPollClipCount)
                 {
@@ -5194,6 +6296,7 @@ namespace BiwamasuMixerGui
                 _deviceConnected = false;
                 _deviceFlashLoaded = false;
                 _recentClipDetected = false;
+                _eqBypassLoudnessHint = false;
                 _testToneActive = false;
                 _lblConnState.Text = "状態: 未接続";
                 _lblConnState.ForeColor = SystemColors.GrayText;
@@ -5227,6 +6330,7 @@ namespace BiwamasuMixerGui
         {
             if (_syncingUi) return;
             _recentClipDetected = false;
+            _eqBypassLoudnessHint = (!_chkEq.Checked && _eqProfile != null && _eqProfile.PreampDb <= -8.0);
             UpdateEqSummaryLabel();
             UpdateGainWarningsAndThresholds();
             SetUnsavedState(true);
@@ -5235,9 +6339,11 @@ namespace BiwamasuMixerGui
 
         private void ApplyEqProfileAndState(EqProfile profile, bool enableEq, bool showToastOnOffline)
         {
+            bool wasEnabled = _chkEq.Checked;
             _recentClipDetected = false;
             _eqProfile = profile.Clone();
             SaveCachedEq(_eqProfile);
+            _eqBypassLoudnessHint = (wasEnabled && !enableEq && _eqProfile != null && _eqProfile.PreampDb <= -8.0);
 
             _syncingUi = true;
             _chkEq.Checked = enableEq;
@@ -5269,6 +6375,7 @@ namespace BiwamasuMixerGui
                     (double)_numMaster.Value,
                     (double)_numPc.Value,
                     _lastRxPinMode);
+                CacheProfileCoeffsLocally(_eqProfile);
                 if (_statusText.ForeColor == SystemColors.ControlText)
                 {
                     _statusText.Text = string.Format("EQ反映済み: {0}", _eqProfile.SourceLabel);
@@ -5467,7 +6574,15 @@ namespace BiwamasuMixerGui
                     snap.FilePath = existing.FilePath;
                 }
                 snap.Name = dlg.EnteredName;
-                _favoriteStore.Save(snap);
+                try
+                {
+                    _favoriteStore.Save(snap);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "お気に入りの保存に失敗しました: " + ex.Message, "保存エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
                 _eqProfile.SourceLabel = snap.Name;
                 UpdateEqSummaryLabel();
                 if (_statusText.ForeColor == SystemColors.ControlText)
@@ -5513,11 +6628,70 @@ namespace BiwamasuMixerGui
             }
         }
 
+        private void CacheProfileCoeffsLocally(EqProfile profile)
+        {
+            if (profile == null) return;
+            string err;
+            float pre = EqDspMath.ComputePreampLinear(profile.PreampDb, out err);
+            if (err != null) return;
+            float[][] coeffs = new float[11][];
+            for (int i = 0; i < 11; i++)
+            {
+                coeffs[i] = EqDspMath.ComputeBiquad(profile.Bands[i], i + 1, out err);
+                if (coeffs[i] == null) return;
+            }
+            _lastHwPreampLin = pre;
+            _lastHwCoeffs = coeffs;
+        }
+
+        private void RestoreRawHardwareEqAndState(float rawPreamp, float[][] rawCoeffs, EqProfile fallbackProfile, bool enableEq)
+        {
+            _recentClipDetected = false;
+            _eqBypassLoudnessHint = false;
+            _eqProfile = fallbackProfile.Clone();
+            SaveCachedEq(_eqProfile);
+
+            _syncingUi = true;
+            _chkEq.Checked = enableEq;
+            _syncingUi = false;
+            UpdateEqSummaryLabel();
+            UpdateGainWarningsAndThresholds();
+
+            if (!_deviceConnected) return;
+            try
+            {
+                _hid.WriteRawEqCoeffs(rawPreamp, rawCoeffs);
+                _hid.WriteParams(
+                    _chkEq.Checked,
+                    (double)_numGame.Value,
+                    (double)_numMaster.Value,
+                    (double)_numPc.Value,
+                    _lastRxPinMode);
+                _lastHwPreampLin = rawPreamp;
+                _lastHwCoeffs = rawCoeffs;
+            }
+            catch (Exception ex)
+            {
+                HandleCommFailure(ex);
+            }
+        }
+
         private void OnOpenEqEditorClick(object sender, EventArgs e)
         {
             _pollTimer.Stop();
             try
             {
+                if (_deviceConnected)
+                {
+                    float devPre;
+                    float[][] devCoeffs;
+                    if (_hid.TryReadDeviceEq(out devPre, out devCoeffs))
+                    {
+                        _lastHwPreampLin = devPre;
+                        _lastHwCoeffs = devCoeffs;
+                    }
+                }
+
                 using (EqEditorForm dlg = new EqEditorForm(
                     _eqProfile,
                     _chkEq.Checked,
@@ -5526,7 +6700,10 @@ namespace BiwamasuMixerGui
                     delegate(EqProfile applied, bool eqOn, bool explicitCommit)
                     {
                         ApplyEqProfileAndState(applied, eqOn, explicitCommit);
-                    }))
+                    },
+                    _lastHwPreampLin,
+                    _lastHwCoeffs,
+                    RestoreRawHardwareEqAndState))
                 {
                     dlg.ShowDialog(this);
                     if (!string.IsNullOrEmpty(dlg.LastSelectedEqDir))
@@ -5584,6 +6761,7 @@ namespace BiwamasuMixerGui
             try
             {
                 _recentClipDetected = false;
+                _eqBypassLoudnessHint = false;
                 _hid.ResetDefaults();
                 _eqProfile = new EqProfile();
                 SaveCachedEq(_eqProfile);
@@ -5601,15 +6779,50 @@ namespace BiwamasuMixerGui
             }
         }
 
+        private void ExecuteVerifiedFlashSave()
+        {
+            if (_pendingParamSend)
+            {
+                WriteCurrentParamsOrThrow();
+            }
+            uint beforeSaves = _hid.ReadFullStatus().FlashSaves;
+            _hid.SaveToFlash();
+
+            MixerStatus after = null;
+            Exception lastErr = null;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                try
+                {
+                    after = _hid.ReadFullStatus();
+                    if (after.FlashSaves > beforeSaves) break;
+                }
+                catch (Exception ex)
+                {
+                    lastErr = ex;
+                }
+                Thread.Sleep(60);
+            }
+
+            if (after == null)
+            {
+                throw lastErr ?? new IOException("保存後の状態確認に失敗しました。");
+            }
+            if (after.FlashSaves <= beforeSaves)
+            {
+                throw new IOException("本体フラッシュメモリの書き込み検証に失敗しました。");
+            }
+
+            SetUnsavedState(false);
+            RefreshFromDevice(false);
+        }
+
         private void OnSaveFlashClick(object sender, EventArgs e)
         {
             if (!_deviceConnected) return;
             try
             {
-                FlushPendingParamWrite();
-                _hid.SaveToFlash();
-                SetUnsavedState(false);
-                RefreshFromDevice(false);
+                ExecuteVerifiedFlashSave();
                 if (_statusText.ForeColor == SystemColors.ControlText)
                 {
                     _statusText.Text = "本体メモリに保存しました";
@@ -5670,6 +6883,18 @@ namespace BiwamasuMixerGui
     {
         [DllImport("user32.dll")]
         private static extern bool SetProcessDPIAware();
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsIconic(IntPtr hWnd);
 
         private static bool TryParseHexUshort(string raw, out ushort val)
         {
@@ -5755,22 +6980,57 @@ namespace BiwamasuMixerGui
                 if (iniParsed.Bands[1].Kind != FilterKind.PK || Math.Abs(iniParsed.Bands[1].GainDb) > 0.01) return 10;
                 if (iniParsed.Bands[2].Kind != FilterKind.HSC || Math.Abs(iniParsed.Bands[2].GainDb - 2.5) > 0.01) return 11;
 
-                // Test messy AI chat output paste parsing (# Preset, markdown fences, Japanese prose, comma Fc)
+                // Test messy AI chat output paste parsing (# Preset, markdown fences, bold Preamp, Unicode minus, Filter:/Filter1:, BW Oct, comma Fc)
                 string messyAiReply =
                     "はい、足音重視のイコライザー設定を作成しました！\r\n```text\r\n" +
                     "# Preset: FPS足音カスタム\r\n" +
-                    "Preamp: -4.2 dB\r\n" +
-                    "- Filter 1: ON LSC Fc 100 Hz Gain -2.5 dB Q 0.71\r\n" +
-                    "- Filter 2: ON PK Fc 2,000 Hz Gain 4.0 dB Q 1.41\r\n" +
+                    "**Preamp：** −4.2 dB\r\n" +
+                    "- Filter1: ON LSC Fc 100 Hz Gain −2.5 dB Q 0.71\r\n" +
+                    "- Filter: ON PK Fc 2,000 Hz Gain 4.0 dB BW Oct 1.0\r\n" +
                     "```\r\nこのブロックをコピーして貼り付けてください。";
                 EqProfile aiParsed = EqDspMath.ParsePeaceText(messyAiReply, "fallback");
                 if (aiParsed.SourceLabel != "FPS足音カスタム" || Math.Abs(aiParsed.PreampDb - (-4.2)) > 0.01) return 13;
                 if (Math.Abs(aiParsed.Bands[1].FrequencyHz - 2000.0) > 0.01 || Math.Abs(aiParsed.Bands[1].GainDb - 4.0) > 0.01) return 14;
+                if (Math.Abs(aiParsed.Bands[1].Q - 1.41) > 0.03) return 17;
 
-                // Test FavoritePresetStore save / list / delete
+                // Test rejection of unsupported active filters, per-speaker Channel, NaN, and decimal comma
+                string[] mustReject = new string[]
+                {
+                    "Preamp: -6 dB\r\nFilter 1: ON HP Fc 80 Hz",
+                    "Channel: L\r\nFilter 1: ON PK Fc 1000 Hz Gain 3 dB Q 1.41",
+                    "GraphicEQ: 25 0; 40 0",
+                    "Preamp: -6,5 dB\r\nFilter 1: ON PK Fc 1000 Hz Gain 3 dB Q 1.41",
+                    "Filter 1: ON PK Fc 1000,5 Hz Gain 3 dB Q 1.41",
+                    "[Frequencies]\r\nFrequency1=1000\r\n[Gains]\r\nGain1=3\r\n[General]\r\nPreAmp=NaN\r\n"
+                };
+                for (int r = 0; r < mustReject.Length; r++)
+                {
+                    bool rejected = false;
+                    try { EqDspMath.ParsePeaceText(mustReject[r], "bad"); }
+                    catch (InvalidDataException) { rejected = true; }
+                    if (!rejected) return 18;
+                }
+
+                // Test RBJ biquad reconstruction round-trip (LSC + PK + HSC, positive & negative gains)
+                EqProfile origSample = EqProfile.CreateVoiceFootstepSample();
+                float origPre = EqDspMath.ComputePreampLinear(origSample.PreampDb, out err);
+                float[][] origCoeffs = new float[11][];
+                for (int i = 0; i < 11; i++)
+                {
+                    origCoeffs[i] = EqDspMath.ComputeBiquad(origSample.Bands[i], i + 1, out err);
+                    if (origCoeffs[i] == null) return 19;
+                }
+                EqProfile recon;
+                if (!EqDspMath.TryReconstructProfileFromCoeffs(origPre, origCoeffs, "本体メモリ保存済み", out recon)) return 20;
+                if (Math.Abs(recon.PreampDb - origSample.PreampDb) > 0.11) return 21;
+                if (recon.Bands[0].Kind != FilterKind.LSC || Math.Abs(recon.Bands[0].GainDb - (-3.0)) > 0.15 || Math.Abs(recon.Bands[0].FrequencyHz - 100.0) > 1.5) return 22;
+                if (recon.Bands[5].Kind != FilterKind.PK || Math.Abs(recon.Bands[5].GainDb - 3.0) > 0.15 || Math.Abs(recon.Bands[5].FrequencyHz - 2000.0) > 5.0) return 23;
+                if (recon.Bands[10].Kind != FilterKind.HSC || Math.Abs(recon.Bands[10].GainDb - (-1.5)) > 0.15 || Math.Abs(recon.Bands[10].FrequencyHz - 10000.0) > 30.0) return 24;
+
+                // Test FavoritePresetStore save / list / delete (including reserved name CON)
                 FavoritePresetStore store = new FavoritePresetStore(tmpFavDir);
                 FavoritePreset fav = new FavoritePreset();
-                fav.Name = "WH-1000XM6 テスト";
+                fav.Name = "CON";
                 fav.MasterDb = -43.5;
                 fav.GameDb = -2.0;
                 fav.PcTrimDb = -1.0;
@@ -5794,11 +7054,14 @@ namespace BiwamasuMixerGui
                 if (ic == null || ic.Width <= 0 || ic.Height <= 0) return 12;
             }
 
+            if (!GainSlider.VerifyGrooveDoubleClickSafetyForTest()) return 26;
+
             using (MainForm mf = new MainForm(vid != 0 ? vid : (ushort)0xcafe, pid != 0 ? pid : (ushort)0x4026))
             using (EqEditorForm ef = new EqEditorForm(p, true, AppDomain.CurrentDomain.BaseDirectory, null, null))
             using (HelpGuideForm hf = new HelpGuideForm(null, 0))
             using (AiEqPasteForm af = new AiEqPasteForm(null, false))
             {
+                if (!mf.VerifyEqBypassHintForTest()) return 25;
                 mf.SetPreviewLevelsForTest(-11.0, 11.5, 0.0);
                 IntPtr h1 = mf.Handle;
                 IntPtr h2 = ef.Handle;
@@ -5821,6 +7084,8 @@ namespace BiwamasuMixerGui
             ReadHeaderUsbIds(AppDomain.CurrentDomain.BaseDirectory, ref vid, ref pid);
 
             bool devIds = false;
+            bool explicitVid = false;
+            bool explicitPid = false;
             bool selfTest = false;
             string writeIcoPath = null;
             for (int i = 0; i < args.Length; i++)
@@ -5843,13 +7108,13 @@ namespace BiwamasuMixerGui
                           string.Equals(a, "-UsbVid", StringComparison.OrdinalIgnoreCase)) && i + 1 < args.Length)
                 {
                     ushort parsed;
-                    if (TryParseHexUshort(args[++i], out parsed)) vid = parsed;
+                    if (TryParseHexUshort(args[++i], out parsed)) { vid = parsed; explicitVid = true; }
                 }
                 else if ((string.Equals(a, "--pid", StringComparison.OrdinalIgnoreCase) ||
                           string.Equals(a, "-UsbPid", StringComparison.OrdinalIgnoreCase)) && i + 1 < args.Length)
                 {
                     ushort parsed;
-                    if (TryParseHexUshort(args[++i], out parsed)) pid = parsed;
+                    if (TryParseHexUshort(args[++i], out parsed)) { pid = parsed; explicitPid = true; }
                 }
             }
 
@@ -5860,10 +7125,10 @@ namespace BiwamasuMixerGui
                 return 0;
             }
 
-            if (devIds && (vid == 0 || pid == 0))
+            if (devIds)
             {
-                vid = 0xcafe;
-                pid = 0x4026;
+                if (!explicitVid) vid = 0xcafe;
+                if (!explicitPid) pid = 0x4026;
             }
 
             if (selfTest)
@@ -5882,7 +7147,23 @@ namespace BiwamasuMixerGui
                 return 1;
             }
 
-            Application.Run(new MainForm(vid, pid));
+            bool createdNew = true;
+            string mutexName = string.Format(CultureInfo.InvariantCulture, "Local\\BiwamasuMixerSettingTool_{0:X4}_{1:X4}", vid, pid);
+            using (Mutex singleInstanceMutex = new Mutex(true, mutexName, out createdNew))
+            {
+                if (!createdNew)
+                {
+                    IntPtr existingHwnd = FindWindow(null, "Biwamasu-Mixer Setting tool");
+                    if (existingHwnd != IntPtr.Zero)
+                    {
+                        if (IsIconic(existingHwnd)) ShowWindow(existingHwnd, 9);
+                        SetForegroundWindow(existingHwnd);
+                    }
+                    return 0;
+                }
+
+                Application.Run(new MainForm(vid, pid));
+            }
             return 0;
         }
     }

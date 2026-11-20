@@ -56,6 +56,23 @@ static inline float dsp_flush_tiny(float x) {
     return (x > -1.0e-20f && x < 1.0e-20f) ? 0.0f : x;
 }
 
+bool dsp_float_sane(float x) {
+    return (x == x) && (x > -20.0f && x < 20.0f);
+}
+
+bool dsp_biquad_stable(const dsp_biquad_coeff_t *c) {
+    if (!dsp_float_sane(c->b0) || !dsp_float_sane(c->b1) || !dsp_float_sane(c->b2) ||
+        !dsp_float_sane(c->a1) || !dsp_float_sane(c->a2)) return false;
+    if (!(c->a2 > -1.0f && c->a2 < 1.0f)) return false;
+    float abs_a1 = c->a1 < 0.0f ? -c->a1 : c->a1;
+    return (1.0f + c->a2) > abs_a1;
+}
+
+static bool coeff_equal(const dsp_biquad_coeff_t *a, const dsp_biquad_coeff_t *b) {
+    return a->b0 == b->b0 && a->b1 == b->b1 && a->b2 == b->b2 &&
+           a->a1 == b->a1 && a->a2 == b->a2;
+}
+
 static inline int16_t read_s16le(const uint8_t *p) {
     return (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
@@ -64,10 +81,50 @@ void dsp_eq_reset_states(dsp_eq_t *eq) {
     memset(eq->states, 0, sizeof(eq->states));
 }
 
+static void dsp_eq_apply_pending_resets(dsp_eq_t *eq) {
+    if (eq->reset_pending) {
+        dsp_eq_reset_states(eq);
+        eq->reset_pending = false;
+        eq->band_reset_mask = 0;
+    } else if (eq->band_reset_mask != 0u) {
+        uint16_t mask = eq->band_reset_mask;
+        eq->band_reset_mask = 0;
+        for (unsigned b = 0; b < DSP_EQ_BANDS; b++) {
+            if (mask & (uint16_t)(1u << b)) {
+                memset(&eq->states[b], 0, sizeof(eq->states[b]));
+            }
+        }
+    }
+}
+
+static inline void dsp_eq_run_biquads(dsp_eq_t *eq, float preamp, float *l_io, float *r_io) {
+    float xl = *l_io * preamp;
+    float xr = *r_io * preamp;
+    for (unsigned b = 0; b < DSP_EQ_BANDS; b++) {
+        const dsp_biquad_coeff_t *c = &eq->coeffs[b];
+        dsp_biquad_state_t *st = &eq->states[b];
+
+        float yl = c->b0 * xl + st->z1_l;
+        st->z1_l = dsp_flush_tiny(c->b1 * xl - c->a1 * yl + st->z2_l);
+        st->z2_l = dsp_flush_tiny(c->b2 * xl - c->a2 * yl);
+        xl = yl;
+
+        float yr = c->b0 * xr + st->z1_r;
+        st->z1_r = dsp_flush_tiny(c->b1 * xr - c->a1 * yr + st->z2_r);
+        st->z2_r = dsp_flush_tiny(c->b2 * xr - c->a2 * yr);
+        xr = yr;
+    }
+    *l_io = xl;
+    *r_io = xr;
+}
+
 void dsp_eq_init_flat(dsp_eq_t *eq, bool enabled) {
     eq->enabled = enabled;
     eq->reset_pending = false;
+    eq->band_reset_mask = 0;
     eq->preamp_linear = 1.0f;
+    eq->cur_preamp = 1.0f;
+    eq->cur_mix = enabled ? 1.0f : 0.0f;
     for (unsigned b = 0; b < DSP_EQ_BANDS; b++) {
         eq->coeffs[b] = (dsp_biquad_coeff_t){ 1.0f, 0.0f, 0.0f, 0.0f, 0.0f };
     }
@@ -85,35 +142,30 @@ void dsp_eq_set_band(dsp_eq_t *eq, unsigned band, const dsp_biquad_coeff_t *coef
     if (band >= DSP_EQ_BANDS) return;
     uint32_t irq = 0;
     dsp_lock_irq(&irq);
-    eq->coeffs[band] = *coeff;
-    eq->reset_pending = true;
+    if (!coeff_equal(&eq->coeffs[band], coeff)) {
+        eq->coeffs[band] = *coeff;
+        eq->band_reset_mask |= (uint16_t)(1u << band);
+    }
+    dsp_unlock_irq(irq);
+}
+
+void dsp_eq_commit_profile(dsp_eq_t *eq, float preamp_linear, const dsp_biquad_coeff_t coeffs[DSP_EQ_BANDS]) {
+    uint32_t irq = 0;
+    dsp_lock_irq(&irq);
+    eq->preamp_linear = preamp_linear;
+    for (unsigned b = 0; b < DSP_EQ_BANDS; b++) {
+        if (!coeff_equal(&eq->coeffs[b], &coeffs[b])) {
+            eq->coeffs[b] = coeffs[b];
+            eq->band_reset_mask |= (uint16_t)(1u << b);
+        }
+    }
     dsp_unlock_irq(irq);
 }
 
 void dsp_eq_process_stereo(dsp_eq_t *eq, float *l_io, float *r_io) {
-    if (eq->reset_pending) {
-        dsp_eq_reset_states(eq);
-        eq->reset_pending = false;
-    }
+    dsp_eq_apply_pending_resets(eq);
     if (!eq->enabled) return;
-    float xl = *l_io * eq->preamp_linear;
-    float xr = *r_io * eq->preamp_linear;
-    for (unsigned b = 0; b < DSP_EQ_BANDS; b++) {
-        const dsp_biquad_coeff_t *c = &eq->coeffs[b];
-        dsp_biquad_state_t *st = &eq->states[b];
-
-        float yl = c->b0 * xl + st->z1_l;
-        st->z1_l = dsp_flush_tiny(c->b1 * xl - c->a1 * yl + st->z2_l);
-        st->z2_l = dsp_flush_tiny(c->b2 * xl - c->a2 * yl);
-        xl = yl;
-
-        float yr = c->b0 * xr + st->z1_r;
-        st->z1_r = dsp_flush_tiny(c->b1 * xr - c->a1 * yr + st->z2_r);
-        st->z2_r = dsp_flush_tiny(c->b2 * xr - c->a2 * yr);
-        xr = yr;
-    }
-    *l_io = xl;
-    *r_io = xr;
+    dsp_eq_run_biquads(eq, eq->preamp_linear, l_io, r_io);
 }
 
 static void recompute_gains_unlocked(dsp_mixer_t *m) {
@@ -161,10 +213,10 @@ void dsp_mixer_recompute_gains(dsp_mixer_t *m) {
 void dsp_mixer_set_params(dsp_mixer_t *m, const dsp_params_t *p) {
     uint32_t irq = 0;
     dsp_lock_irq(&irq);
-    bool eq_changed = (m->params.eq_enabled != p->eq_enabled);
+    bool turning_on = (!m->params.eq_enabled && p->eq_enabled);
     m->params = *p;
     m->eq.enabled = p->eq_enabled;
-    if (eq_changed) m->eq.reset_pending = true;
+    if (turning_on && m->eq.cur_mix <= 1.0e-4f) m->eq.reset_pending = true;
     recompute_gains_unlocked(m);
     dsp_unlock_irq(irq);
 }
@@ -195,9 +247,10 @@ void dsp_mixer_set_eq_enabled(dsp_mixer_t *m, bool enabled) {
     uint32_t irq = 0;
     dsp_lock_irq(&irq);
     if (m->eq.enabled != enabled) {
+        bool turning_on = (!m->eq.enabled && enabled);
         m->eq.enabled = enabled;
         m->params.eq_enabled = enabled;
-        m->eq.reset_pending = true;
+        if (turning_on && m->eq.cur_mix <= 1.0e-4f) m->eq.reset_pending = true;
     }
     dsp_unlock_irq(irq);
 }
@@ -354,9 +407,10 @@ void dsp_render_i2s_block(dsp_mixer_t *m, int32_t *out_i2s, unsigned frames) {
     unsigned pc_pop = 0;
     bool pc_running = false;
     bool tone_on = false;
+    bool eq_target_on = false;
     uint32_t pc_phase_start = 0;
     uint32_t pc_step = 65536u;
-    float g_game, g_pc_l, g_pc_r, g_master;
+    float g_game, g_pc_l, g_pc_r, g_master, g_preamp;
 
     uint32_t irq = 0;
     dsp_lock_irq(&irq);
@@ -365,6 +419,9 @@ void dsp_render_i2s_block(dsp_mixer_t *m, int32_t *out_i2s, unsigned frames) {
     g_pc_l = m->target_pc_gain_l;
     g_pc_r = m->target_pc_gain_r;
     g_master = m->target_master_gain;
+    g_preamp = m->eq.preamp_linear;
+    eq_target_on = m->eq.enabled;
+    dsp_eq_apply_pending_resets(&m->eq);
     tone_on = m->test_tone_enabled;
 
     uint32_t sw_avail = m->sw_write - m->sw_read;
@@ -519,8 +576,28 @@ void dsp_render_i2s_block(dsp_mixer_t *m, int32_t *out_i2s, unsigned frames) {
         float mix_r = sw_r * m->cur_game_gain + pc_r * m->cur_pc_gain_r;
 
         // Apply 11-band headphone EQ to the mixed (Switch 2 + PC) stereo bus
-        // before MasterGain; OBS USB Mic branches upstream in rx_route_packet().
-        dsp_eq_process_stereo(&m->eq, &mix_l, &mix_r);
+        // before MasterGain with click-free wet/dry crossfade and preamp smoothing;
+        // OBS USB Mic branches upstream in rx_route_packet().
+        float target_mix = eq_target_on ? 1.0f : 0.0f;
+        m->eq.cur_preamp += 0.010f * (g_preamp - m->eq.cur_preamp);
+        m->eq.cur_mix += 0.010f * (target_mix - m->eq.cur_mix);
+        if (eq_target_on || m->eq.cur_mix > 1.0e-4f) {
+            float wet_l = mix_l;
+            float wet_r = mix_r;
+            dsp_eq_run_biquads(&m->eq, m->eq.cur_preamp, &wet_l, &wet_r);
+            float mix_w = m->eq.cur_mix;
+            if (eq_target_on && mix_w > 0.9999f) {
+                m->eq.cur_mix = 1.0f;
+                mix_l = wet_l;
+                mix_r = wet_r;
+            } else {
+                mix_l += mix_w * (wet_l - mix_l);
+                mix_r += mix_w * (wet_r - mix_r);
+            }
+        } else if (m->eq.cur_mix != 0.0f) {
+            m->eq.cur_mix = 0.0f;
+            dsp_eq_reset_states(&m->eq);
+        }
 
         if (tone_on) {
             mix_l += tone_sample(&m->tone_phase_l, 39370534u);

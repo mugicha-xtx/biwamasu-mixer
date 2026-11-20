@@ -54,13 +54,26 @@ $headerVid = if ($usbIdsText -match '#define\s+USB_VID\s+(0x[0-9a-fA-F]+u?)') { 
 $headerBridgePid = if ($usbIdsText -match '#define\s+BRIDGE_USB_PID\s+(0x[0-9a-fA-F]+u?)') { Parse-HexId $matches[1] } else { 0 }
 $headerMixerPid = if ($usbIdsText -match '#define\s+MIXER_USB_PID\s+(0x[0-9a-fA-F]+u?)') { Parse-HexId $matches[1] } else { 0 }
 
-$effVid = if ($UsbVid) { Parse-HexId $UsbVid } else { $headerVid }
-$effBridgePid = if ($BridgePid) { Parse-HexId $BridgePid } else { $headerBridgePid }
-$effMixerPid = if ($MixerPid) { Parse-HexId $MixerPid } else { $headerMixerPid }
-if ($DevTestIds -and ($effVid -eq 0 -or $effBridgePid -eq 0 -or $effMixerPid -eq 0)) {
+$effVid = $headerVid
+$effBridgePid = $headerBridgePid
+$effMixerPid = $headerMixerPid
+if ($DevTestIds) {
     $effVid = 0xcafe
     $effBridgePid = 0x401d
     $effMixerPid = 0x4026
+}
+if ($UsbVid)    { $effVid = Parse-HexId $UsbVid }
+if ($BridgePid) { $effBridgePid = Parse-HexId $BridgePid }
+if ($MixerPid)  { $effMixerPid = Parse-HexId $MixerPid }
+
+if ($effVid -eq 0 -or $effBridgePid -eq 0 -or $effMixerPid -eq 0) {
+    throw 'Authorized USB VID/PID not configured yet (0x0000). Set USB_VID, BRIDGE_USB_PID, and MIXER_USB_PID in include/usb_ids.h after official PID allocation (or pass -DevTestIds for local testing only).'
+}
+if (!$DevTestIds -and $effVid -eq 0xcafe) {
+    throw 'Development test VID (0xCAFE) requires -DevTestIds and must never be packaged into a public release ZIP.'
+}
+if ($effBridgePid -eq $effMixerPid) {
+    throw "BRIDGE_USB_PID and MIXER_USB_PID must be distinct (both were 0x$('{0:x4}' -f $effBridgePid))."
 }
 
 $mappedDrives = @()
@@ -137,10 +150,16 @@ try {
         '-DPICO_BOARD=pico2',
         '-DCMAKE_BUILD_TYPE=Release'
     )
-    if ($UsbVid)    { $cmakeDefs += "-DUSB_VID=$(Format-CDef $UsbVid)" }
-    if ($BridgePid) { $cmakeDefs += "-DBRIDGE_USB_PID=$(Format-CDef $BridgePid)" }
-    if ($MixerPid)  { $cmakeDefs += "-DMIXER_USB_PID=$(Format-CDef $MixerPid)" }
-    if ($DevTestIds) { $cmakeDefs += '-DALLOW_DEV_USB_IDS=1' }
+    if ($DevTestIds) {
+        $cmakeDefs += '-DALLOW_DEV_USB_IDS=1'
+        $cmakeDefs += "-DUSB_VID=$(Format-CDef ('0x{0:x4}' -f $effVid))"
+        $cmakeDefs += "-DBRIDGE_USB_PID=$(Format-CDef ('0x{0:x4}' -f $effBridgePid))"
+        $cmakeDefs += "-DMIXER_USB_PID=$(Format-CDef ('0x{0:x4}' -f $effMixerPid))"
+    } else {
+        if ($UsbVid)    { $cmakeDefs += "-DUSB_VID=$(Format-CDef $UsbVid)" }
+        if ($BridgePid) { $cmakeDefs += "-DBRIDGE_USB_PID=$(Format-CDef $BridgePid)" }
+        if ($MixerPid)  { $cmakeDefs += "-DMIXER_USB_PID=$(Format-CDef $MixerPid)" }
+    }
 
     # 1. Build Switch-side TX bridge (Pico 2 H)
     $txBin = "$posixRoot/build-tx-bridge"
@@ -174,10 +193,13 @@ try {
     Copy-Item -LiteralPath "$rxBin/pico_audio_pack.uf2"    -Destination $rxUf2 -Force
 
     Write-Host 'Building Biwamasu-Mixer Setting tool.exe Windows GUI...'
-    & (Join-Path $root 'scripts/Build-Gui.ps1') `
-        -UsbVid ('0x{0:x4}' -f $effVid) `
-        -MixerPid ('0x{0:x4}' -f $effMixerPid) `
-        -OutPath $guiExe
+    $guiArgs = @{
+        UsbVid   = ('0x{0:x4}' -f $effVid)
+        MixerPid = ('0x{0:x4}' -f $effMixerPid)
+        OutPath  = $guiExe
+    }
+    if ($DevTestIds) { $guiArgs['DevTestIds'] = $true }
+    & (Join-Path $root 'scripts/Build-Gui.ps1') @guiArgs
 
     # Package self-contained GitHub Releases archive
     $bundleRoot = Join-Path $distDir 'bundle'
@@ -185,12 +207,13 @@ try {
         Remove-Item -Recurse -Force -LiteralPath $bundleRoot
     }
     $bundleDir = Join-Path $bundleRoot 'biwamasu-mixer'
-    foreach ($sub in @('scripts', 'include', 'presets', 'images', 'hardware', 'licenses')) {
+    foreach ($sub in @('scripts', 'include', 'presets', 'images', 'hardware', 'licenses', 'docs')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $bundleDir $sub) | Out-Null
     }
     Copy-Item -LiteralPath $txUf2, $rxUf2, $guiExe, (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $bundleDir -Force
     Copy-Item -LiteralPath (Join-Path $root 'scripts/Control-BiwamasuMixer.ps1') -Destination (Join-Path $bundleDir 'scripts') -Force
     Copy-Item -LiteralPath (Join-Path $root 'presets/sample-peace.txt') -Destination (Join-Path $bundleDir 'presets') -Force
+    Copy-Item -LiteralPath (Join-Path $root 'docs/USB_PID_APPLICATION.md') -Destination (Join-Path $bundleDir 'docs') -Force
     Get-ChildItem -LiteralPath (Join-Path $root 'images') -Filter '*.jpg' -File |
         Copy-Item -Destination (Join-Path $bundleDir 'images') -Force
     Copy-Item -LiteralPath (Join-Path $root 'hardware/schematic.svg'), (Join-Path $root 'hardware/README.md') -Destination (Join-Path $bundleDir 'hardware') -Force

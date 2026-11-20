@@ -36,7 +36,10 @@ static bool blob_valid(const pack_flash_blob_t *b) {
     if (b->game_db_x100 < -6000 || b->game_db_x100 > 1200) return false;
     if (b->master_db_x100 < -6000 || b->master_db_x100 > 600) return false;
     if (b->pc_trim_db_x100 < -2400 || b->pc_trim_db_x100 > 1200) return false;
-    if (!(b->preamp_linear >= 0.01f && b->preamp_linear <= 4.0f)) return false;
+    if (!dsp_float_sane(b->preamp_linear) || !(b->preamp_linear >= 0.01f && b->preamp_linear <= 4.0f)) return false;
+    for (unsigned i = 0; i < DSP_EQ_BANDS; i++) {
+        if (!dsp_biquad_stable(&b->coeffs[i])) return false;
+    }
     return true;
 }
 
@@ -55,11 +58,18 @@ bool flash_cfg_load(dsp_mixer_t *mixer) {
     mixer->params.pc_trim_db_x100 = copy.pc_trim_db_x100;
     mixer->eq.enabled = mixer->params.eq_enabled;
     mixer->eq.preamp_linear = copy.preamp_linear;
+    mixer->eq.cur_preamp = copy.preamp_linear;
+    mixer->eq.cur_mix = mixer->eq.enabled ? 1.0f : 0.0f;
     memcpy(mixer->eq.coeffs, copy.coeffs, sizeof(copy.coeffs));
     mixer->eq.reset_pending = true;
+    mixer->eq.band_reset_mask = 0;
     dsp_unlock_irq(irq);
 
     dsp_mixer_recompute_gains(mixer);
+    mixer->cur_game_gain = mixer->target_game_gain;
+    mixer->cur_pc_gain_l = mixer->target_pc_gain_l;
+    mixer->cur_pc_gain_r = mixer->target_pc_gain_r;
+    mixer->cur_master_gain = mixer->target_master_gain;
     return true;
 }
 
@@ -92,6 +102,10 @@ bool flash_cfg_save(const dsp_mixer_t *mixer, flash_audio_pause_fn pause_audio, 
 
     if (pause_audio) pause_audio();
     commit_flash_page((const uint8_t *)&blob);
+    const pack_flash_blob_t *stored = (const pack_flash_blob_t *)(XIP_BASE + CFG_FLASH_OFFSET);
+    pack_flash_blob_t readback;
+    memcpy(&readback, stored, sizeof(readback));
+    bool verified = (memcmp(&readback, &blob, sizeof(blob)) == 0) && blob_valid(&readback);
     if (resume_audio) resume_audio();
-    return true;
+    return verified;
 }

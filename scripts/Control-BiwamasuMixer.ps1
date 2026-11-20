@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+﻿# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 mugicha_xtx
 param(
     [Nullable[double]]$MasterDb = $null,
@@ -32,7 +32,7 @@ if (Test-Path -LiteralPath $usbIdsPath) {
     if ($idsText -match '#define\s+USB_VID\s+(0x[0-9a-fA-F]+u?)') { $vidHex = Format-IdHex $matches[1] }
     if ($idsText -match '#define\s+MIXER_USB_PID\s+(0x[0-9a-fA-F]+u?)') { $pidHex = Format-IdHex $matches[1] }
 }
-if ($DevTestIds -and ($vidHex -eq '0000' -or $pidHex -eq '0000')) {
+if ($DevTestIds) {
     $vidHex = 'cafe'
     $pidHex = '4026'
 }
@@ -64,7 +64,7 @@ public static class AudioPackHid {
         public UIntPtr reserved;
     }
 
-    public static byte[] Exchange(string vidHex, string pidHex, byte[] command, bool readBack) {
+    public static SafeFileHandle OpenDevice(string vidHex, string pidHex) {
         Guid g;
         HidD_GetHidGuid(out g);
         IntPtr set = SetupDiGetClassDevs(ref g, null, IntPtr.Zero, 0x12);
@@ -78,48 +78,74 @@ public static class AudioPackHid {
                 if (!SetupDiEnumDeviceInterfaces(set, IntPtr.Zero, ref g, n, ref iface)) break;
                 uint size;
                 SetupDiGetDeviceInterfaceDetail(set, ref iface, IntPtr.Zero, 0, out size, IntPtr.Zero);
+                if (size < 8) continue;
                 IntPtr b = Marshal.AllocHGlobal((int)size);
                 try {
                     Marshal.WriteInt32(b, IntPtr.Size == 8 ? 8 : 6);
                     if (!SetupDiGetDeviceInterfaceDetail(set, ref iface, b, size, out size, IntPtr.Zero)) continue;
                     string path = Marshal.PtrToStringUni(IntPtr.Add(b, 4));
-                    if (path.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    if (path == null || path.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
                     SafeFileHandle h = CreateFile(path, 0x80000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
                     if (h.IsInvalid) { h.Dispose(); continue; }
-                    if (chosen != null) { h.Dispose(); throw new IOException("Multiple Audio Pack devices found"); }
+                    if (chosen != null) { h.Dispose(); chosen.Dispose(); throw new IOException("Multiple Audio Pack devices found"); }
                     chosen = h;
                 } finally {
                     Marshal.FreeHGlobal(b);
                 }
             }
-            if (chosen == null) throw new IOException("Pico Audio Pack (VID_" + vidHex.ToUpperInvariant() + "&PID_" + pidHex.ToUpperInvariant() + ") not found. Connect USB to PC.");
-            if (command != null) {
-                byte[] send = new byte[64];
-                int copyLen = Math.Min(command.Length, 63);
-                Array.Copy(command, 0, send, 1, copyLen);
-                if (!HidD_SetFeature(chosen, send, 64)) {
-                    throw new IOException("HID SetFeature failed: " + Marshal.GetLastWin32Error());
-                }
-            }
-            if (!readBack) return new byte[64];
-            byte[] data = new byte[64];
-            if (!HidD_GetFeature(chosen, data, data.Length)) {
-                throw new IOException("HID GetFeature failed: " + Marshal.GetLastWin32Error());
-            }
-            if (Encoding.ASCII.GetString(data, 1, 4) != "UAP1" || data[5] != 1) {
-                throw new IOException("Unexpected Audio Pack HID signature");
-            }
-            return data;
-        } finally {
+            if (chosen == null) throw new IOException("Biwamasu Mixer (VID_" + vidHex.ToUpperInvariant() + "&PID_" + pidHex.ToUpperInvariant() + ") not found. Connect USB to PC.");
+            return chosen;
+        } catch {
             if (chosen != null) chosen.Dispose();
+            throw;
+        } finally {
             SetupDiDestroyDeviceInfoList(set);
         }
     }
 
-    public static byte[] ReadPage(string vidHex, string pidHex, int page) {
-        byte[] data = Exchange(vidHex, pidHex, new byte[] { 0x10, (byte)page }, true);
-        if (data[6] != page) throw new IOException("HID page mismatch");
+    public static byte[] ExchangeHandle(SafeFileHandle chosen, byte[] command, bool readBack) {
+        if (command != null) {
+            byte[] send = new byte[64];
+            int copyLen = Math.Min(command.Length, 63);
+            Array.Copy(command, 0, send, 1, copyLen);
+            if (!HidD_SetFeature(chosen, send, 64)) {
+                throw new IOException("HID SetFeature failed: " + Marshal.GetLastWin32Error());
+            }
+        }
+        if (!readBack) return new byte[64];
+        byte[] data = new byte[64];
+        if (!HidD_GetFeature(chosen, data, data.Length)) {
+            throw new IOException("HID GetFeature failed: " + Marshal.GetLastWin32Error());
+        }
+        if (Encoding.ASCII.GetString(data, 1, 4) != "UAP1" || data[5] != 1) {
+            throw new IOException("Unexpected Audio Pack HID signature");
+        }
         return data;
+    }
+
+    public static byte[] Exchange(string vidHex, string pidHex, byte[] command, bool readBack) {
+        using (SafeFileHandle chosen = OpenDevice(vidHex, pidHex)) {
+            return ExchangeHandle(chosen, command, readBack);
+        }
+    }
+
+    public static void ExchangeBatch(string vidHex, string pidHex, byte[][] commands) {
+        using (SafeFileHandle chosen = OpenDevice(vidHex, pidHex)) {
+            for (int i = 0; i < commands.Length; i++) {
+                ExchangeHandle(chosen, commands[i], false);
+            }
+        }
+    }
+
+    public static byte[] ReadPage(string vidHex, string pidHex, int page) {
+        using (SafeFileHandle chosen = OpenDevice(vidHex, pidHex)) {
+            for (int retry = 0; retry < 3; retry++) {
+                byte[] data = ExchangeHandle(chosen, new byte[] { 0x10, (byte)page }, true);
+                if (data[6] == page) return data;
+                System.Threading.Thread.Sleep(5);
+            }
+            throw new IOException("HID page mismatch");
+        }
     }
 }
 '@
@@ -128,9 +154,53 @@ if (-not ('AudioPackHid' -as [type])) {
     Add-Type -TypeDefinition $csharpSource -Language CSharp
 }
 
+function Test-FloatSane([single]$x) {
+    return (-not [single]::IsNaN($x)) -and (-not [single]::IsInfinity($x)) -and ($x -gt -20.0) -and ($x -lt 20.0)
+}
+
+function Normalize-EqToken([string]$raw) {
+    if ($null -eq $raw) { return '' }
+    $sb = New-Object System.Text.StringBuilder $raw.Length
+    foreach ($ch in $raw.ToCharArray()) {
+        $code = [int][char]$ch
+        if ($code -ge 0xFF01 -and $code -le 0xFF5E) { $ch = [char]($code - 0xFEE0); $code = [int][char]$ch }
+        if ($code -in @(0x2212, 0x2013, 0x2014, 0x2010, 0x2011, 0xFE63)) { $ch = '-' }
+        elseif ($code -eq 0x3000) { $ch = ' ' }
+        [void]$sb.Append($ch)
+    }
+    return $sb.ToString().Trim()
+}
+
+function Parse-StrictDouble([string]$raw, [string]$desc) {
+    $s = Normalize-EqToken $raw
+    if ($s.Contains(',')) {
+        $sNoThousands = [regex]::Replace($s, '(?<=\d),(?=\d{3}(?!\d))', '')
+        if ($sNoThousands.Contains(',')) {
+            throw "Invalid decimal comma in $desc ('$raw'); use '.' as decimal separator."
+        }
+        $s = $sNoThousands
+    }
+    $val = 0.0
+    if (-not [double]::TryParse($s, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$val) -or
+        [double]::IsNaN($val) -or [double]::IsInfinity($val)) {
+        throw "Invalid numeric value in $desc ('$raw')"
+    }
+    return $val
+}
+
+function Convert-BwOctToQ([double]$bw, [string]$desc) {
+    if ([double]::IsNaN($bw) -or [double]::IsInfinity($bw) -or $bw -le 0.02 -or $bw -gt 20.0) {
+        throw "Out-of-range BW Oct in $desc"
+    }
+    $pow2 = [Math]::Pow(2.0, $bw)
+    return [Math]::Sqrt($pow2) / ($pow2 - 1.0)
+}
+
 function New-BiquadFromSpec([string]$kind, [double]$fc, [double]$gdb, [double]$q, [string]$srcDesc) {
-    if ($fc -lt 10.0 -or $fc -gt 23500.0 -or $q -le 0.05) {
-        throw "Out-of-range filter parameter in $srcDesc"
+    if ([double]::IsNaN($fc) -or $fc -lt 10.0 -or $fc -gt 23500.0 -or
+        [double]::IsNaN($gdb) -or $gdb -lt -30.0 -or $gdb -gt 24.0 -or
+        [double]::IsNaN($q) -or $q -lt 0.06 -or $q -gt 30.0) {
+        throw "Out-of-range filter parameter in $srcDesc (Fc: 10..23500 Hz, Gain: -30..+24 dB, Q: 0.06..30)"
     }
     $fs = 48000.0
     $A = [Math]::Pow(10.0, $gdb / 40.0)
@@ -160,7 +230,9 @@ function New-BiquadFromSpec([string]$kind, [double]$fc, [double]$gdb, [double]$q
     }
     $nb0 = [single]($b0 / $a0); $nb1 = [single]($b1 / $a0); $nb2 = [single]($b2 / $a0)
     $na1 = [single]($a1 / $a0); $na2 = [single]($a2 / $a0)
-    if ([Math]::Abs($na2) -ge 1.0 -or (1.0 + $na2) -le [Math]::Abs($na1)) {
+    if (-not (Test-FloatSane $nb0) -or -not (Test-FloatSane $nb1) -or -not (Test-FloatSane $nb2) -or
+        -not (Test-FloatSane $na1) -or -not (Test-FloatSane $na2) -or
+        [Math]::Abs($na2) -ge 1.0 -or (1.0 + $na2) -le [Math]::Abs($na1)) {
         throw "Unstable biquad generated from $srcDesc"
     }
     return [single[]]@($nb0, $nb1, $nb2, $na1, $na2)
@@ -183,18 +255,18 @@ function Parse-PeaceFilters {
     if ($isIni) {
         $sec = ''
         $freqs = @{}; $gains = @{}; $quals = @{}; $filts = @{}; $dis = @{}
-        foreach ($line in $lines) {
-            $t = $line.Trim()
+        for ($ln = 0; $ln -lt $lines.Count; $ln++) {
+            $t = $lines[$ln].Trim()
             if (!$t -or $t.StartsWith(';') -or $t.StartsWith('#')) { continue }
             if ($t -match '^\[([^\]]+)\]$') { $sec = $matches[1].Trim(); continue }
-            if ($sec -ieq 'General' -and $t -match '^PreAmp\s*=\s*([+-]?\d+(?:\.\d+)?)$') {
-                $preampDb = [double]$matches[1]
-            } elseif ($sec -ieq 'Frequencies' -and $t -match '^Frequency(\d+)\s*=\s*([0-9.]+)$') {
-                $freqs[[int]$matches[1]] = [double]$matches[2]
-            } elseif ($sec -ieq 'Gains' -and $t -match '^Gain(\d+)\s*=\s*([+-]?[0-9.]+)$') {
-                $gains[[int]$matches[1]] = [double]$matches[2]
-            } elseif ($sec -ieq 'Qualities' -and $t -match '^Quality(\d+)\s*=\s*([0-9.]+)$') {
-                $quals[[int]$matches[1]] = [double]$matches[2]
+            if ($sec -ieq 'General' -and $t -match '^PreAmp\s*=\s*(.+)$') {
+                $preampDb = Parse-StrictDouble $matches[1] "Line $($ln + 1) PreAmp"
+            } elseif ($sec -ieq 'Frequencies' -and $t -match '^Frequency(\d+)\s*=\s*(.+)$') {
+                $freqs[[int]$matches[1]] = Parse-StrictDouble $matches[2] "Line $($ln + 1) Frequency"
+            } elseif ($sec -ieq 'Gains' -and $t -match '^Gain(\d+)\s*=\s*(.+)$') {
+                $gains[[int]$matches[1]] = Parse-StrictDouble $matches[2] "Line $($ln + 1) Gain"
+            } elseif ($sec -ieq 'Qualities' -and $t -match '^Quality(\d+)\s*=\s*(.+)$') {
+                $quals[[int]$matches[1]] = Parse-StrictDouble $matches[2] "Line $($ln + 1) Quality"
             } elseif ($sec -ieq 'Filters' -and $t -match '^Filter(\d+)\s*=\s*([+-]?\d+)$') {
                 $filts[[int]$matches[1]] = [int]$matches[2]
             } elseif ($sec -ieq 'Disabled' -and $t -match '^Disabled(\d+)\s*=\s*(\d+)$') {
@@ -217,18 +289,65 @@ function Parse-PeaceFilters {
             $specs += [PSCustomObject]@{ Kind = $kind; Fc = $fc; Gain = $gdb; Q = $q; Desc = "Slider $slot" }
         }
     } else {
-        foreach ($line in $lines) {
-            if ($line -match '^\s*Preamp:\s*([+-]?\d+(?:\.\d+)?)\s*dB') {
-                $preampDb = [double]$matches[1]
-            } elseif ($line -match '^\s*Filter\s+\d+:\s*ON\s+(PK|PEQ|LSC|LS|HSC|HS)\s+Fc\s+([0-9.]+)\s*Hz\s+Gain\s+([+-]?[0-9.]+)\s*dB(?:\s+Q\s+([0-9.]+))?') {
-                $kind = $matches[1].ToUpperInvariant()
-                $fc = [double]$matches[2]
-                $gdb = [double]$matches[3]
+        for ($ln = 0; $ln -lt $lines.Count; $ln++) {
+            $rawLine = $lines[$ln].Trim()
+            if (!$rawLine -or $rawLine.StartsWith('```') -or $rawLine.StartsWith('#') -or $rawLine.StartsWith(';') -or $rawLine.StartsWith('//')) { continue }
+            $norm = (Normalize-EqToken $rawLine).Trim('`').Trim()
+            $norm = ($norm -replace '^([-*>]|・)\s*', '') -replace '\*\*|__|\*', ''
+            $norm = ($norm -replace '\s+[#;].*$', '').Trim()
+            if (!$norm) { continue }
+
+            if ($norm -match '^Channel\s*:\s*(.+)$') {
+                $chSpec = $matches[1].Trim().ToUpperInvariant()
+                if ($chSpec -notin @('ALL', 'L R', 'R L', '1 2', 'FL FR')) {
+                    throw "Line $($ln + 1): Per-channel EQ ('$rawLine') is not supported; use stereo/ALL filters."
+                }
+                continue
+            }
+            if ($norm -match '^(GraphicEQ|Include|Convolution)\s*:') {
+                throw "Line $($ln + 1): Unsupported Equalizer APO directive ('$($matches[1]):') in $Path"
+            }
+            if ($norm -match '^Preamp\s*:\s*([^\s]+)\s*dB\s*$') {
+                $preampDb += Parse-StrictDouble $matches[1] "Line $($ln + 1) Preamp"
+                continue
+            }
+            if ($norm -match '^Preamp\s*[:=]') {
+                throw "Line $($ln + 1): Malformed Preamp line ('$rawLine')"
+            }
+            if ($norm -match '^Filter\s*\d*\s*:\s*(ON|OFF)\s+([A-Za-z0-9]+)(?:\s+(.*))?$') {
+                $isOn = ($matches[1].ToUpperInvariant() -eq 'ON')
+                $kind = $matches[2].ToUpperInvariant()
+                $rest = if ($matches[3]) { $matches[3].Trim() } else { '' }
+                if ($kind -eq 'NONE') { continue }
+                if ($kind -notin @('PK', 'PEQ', 'LSC', 'LS', 'HSC', 'HS')) {
+                    if (-not $isOn) { continue }
+                    throw "Line $($ln + 1): Unsupported active filter type '$kind' ('$rawLine')"
+                }
+                if (-not $isOn) { continue }
+                if ($rest -notmatch '^Fc\s+([^\s]+)\s*Hz\s+Gain\s+([^\s]+)\s*dB(?:\s+(?:Q\s+([^\s]+)|BW\s+Oct\s+([^\s]+)))?\s*$') {
+                    throw "Line $($ln + 1): Malformed Filter parameters ('$rawLine')"
+                }
+                $fc = Parse-StrictDouble $matches[1] "Line $($ln + 1) Fc"
+                $gdb = Parse-StrictDouble $matches[2] "Line $($ln + 1) Gain"
                 $defQ = if ($kind -eq 'PK' -or $kind -eq 'PEQ') { 1.41 } else { 0.70710678 }
-                $q = if ($matches[4]) { [double]$matches[4] } else { $defQ }
-                $specs += [PSCustomObject]@{ Kind = $kind; Fc = $fc; Gain = $gdb; Q = $q; Desc = $line.Trim() }
+                $q = if ($matches[3]) { Parse-StrictDouble $matches[3] "Line $($ln + 1) Q" }
+                     elseif ($matches[4]) { Convert-BwOctToQ (Parse-StrictDouble $matches[4] "Line $($ln + 1) BW Oct") "Line $($ln + 1)" }
+                     else { $defQ }
+                $specs += [PSCustomObject]@{ Kind = $kind; Fc = $fc; Gain = $gdb; Q = $q; Desc = "Line $($ln + 1)" }
+                continue
+            }
+            if ($norm -match '^Filter\s*\d*\s*:') {
+                throw "Line $($ln + 1): Malformed Filter line ('$rawLine')"
             }
         }
+    }
+
+    if ($preampDb -lt -36.0 -or $preampDb -gt 12.0) {
+        throw "Preamp ($preampDb dB) is out of supported range (-36.0 .. +12.0 dB)"
+    }
+    $preampLin = [single][Math]::Pow(10.0, $preampDb / 20.0)
+    if (-not (Test-FloatSane $preampLin) -or $preampLin -lt 0.01 -or $preampLin -gt 4.0) {
+        throw "Preamp linear gain out of range (-36.0 .. +12.0 dB)"
     }
 
     if ($specs.Count -eq 0) { throw "No active PK/LSC/HSC filters found in $Path" }
@@ -248,7 +367,7 @@ function Parse-PeaceFilters {
     }
     return [ordered]@{
         PreampDb = $preampDb
-        PreampLinear = [single][Math]::Pow(10.0, $preampDb / 20.0)
+        PreampLinear = $preampLin
         Bands = $bands
     }
 }
@@ -309,6 +428,15 @@ if ($TestTone -ne '') {
 
 if ($PeaceFile -ne '') {
     $eqData = Parse-PeaceFilters -Path $PeaceFile
+    $pcmd = New-Object byte[] 5
+    $pcmd[0] = 0x43
+    [Array]::Copy([BitConverter]::GetBytes([single]$eqData.PreampLinear), 0, $pcmd, 1, 4)
+
+    $batch = New-Object System.Collections.Generic.List[byte[]]
+    $batch.Add([byte[]]@(0x41, 0xa5))
+    if ($eqData.PreampLinear -lt 1.0) {
+        $batch.Add($pcmd)
+    }
     for ($b = 0; $b -lt 11; $b++) {
         $cmd = New-Object byte[] 22
         $cmd[0] = 0x42
@@ -317,12 +445,11 @@ if ($PeaceFile -ne '') {
             $fb = [BitConverter]::GetBytes([single]$eqData.Bands[$b][$j])
             [Array]::Copy($fb, 0, $cmd, 2 + $j * 4, 4)
         }
-        [void][AudioPackHid]::Exchange($vidHex, $pidHex, $cmd, $false)
+        $batch.Add($cmd)
     }
-    $pcmd = New-Object byte[] 5
-    $pcmd[0] = 0x43
-    [Array]::Copy([BitConverter]::GetBytes([single]$eqData.PreampLinear), 0, $pcmd, 1, 4)
-    [void][AudioPackHid]::Exchange($vidHex, $pidHex, $pcmd, $false)
+    $batch.Add($pcmd)
+    $batch.Add([byte[]]@(0x44, 0xa5))
+    [AudioPackHid]::ExchangeBatch($vidHex, $pidHex, $batch.ToArray())
 }
 
 $needParamWrite = ($null -ne $MasterDb) -or ($null -ne $GameDb) -or ($null -ne $PcTrimDb) -or ($Eq -ne '') -or ($UartRxPin -ne '')
@@ -346,9 +473,12 @@ if ($needParamWrite) {
     [void][AudioPackHid]::Exchange($vidHex, $pidHex, $cmd, $false)
 }
 
+$beforeSaves = $null
 if ($Save) {
+    $preSaveRaw = [AudioPackHid]::ReadPage($vidHex, $pidHex, 3)
+    $beforeSaves = (Words-FromPage $preSaveRaw)[10]
     [void][AudioPackHid]::Exchange($vidHex, $pidHex, [byte[]]@(0x50, 0xa5), $false)
-    Start-Sleep -Milliseconds 150
+    Start-Sleep -Milliseconds 160
 }
 
 # Read back all 4 pages for status display
@@ -356,6 +486,10 @@ $r0 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 0); $w0 = Words-FromPage $r0
 $r1 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 1); $w1 = Words-FromPage $r1
 $r2 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 2); $w2 = Words-FromPage $r2
 $r3 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 3); $w3 = Words-FromPage $r3
+
+if ($Save -and $w3[10] -le $beforeSaves) {
+    throw "Flash save verification failed (FlashSaves remained $($w3[10]))."
+}
 
 if ($PeaceFile -ne '' -and $w3[0] -eq 0) {
     Write-Warning 'Peace filter coefficients were loaded, but EqEnabled is False. Pass -Eq On (and -Save to persist) to enable the EQ.'
@@ -378,7 +512,7 @@ $flags = $r0[7]
     GameDb = [Math]::Round((To-Signed32 $w3[1]) / 100.0, 2)
     PcTrimDb = [Math]::Round((To-Signed32 $w3[3]) / 100.0, 2)
     WindowsMasterVolDb = [Math]::Round((To-Signed32 $w3[4]) / 100.0, 2)
-    WindowsMuted = (($w3[7] -band 1) -ne 0)
+    WindowsMuted = ((($w3[7] -band 1) -ne 0) -or (($w3[7] -band 6) -eq 6))
     FlashSaves = $w3[10]
     SelfTestFailureLine = $w0[0]
     Baud = $w0[1]

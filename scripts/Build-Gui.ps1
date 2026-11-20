@@ -29,11 +29,21 @@ if (Test-Path -LiteralPath $usbIdsPath) {
     if ($usbIdsText -match '#define\s+MIXER_USB_PID\s+(0x[0-9a-fA-F]+u?)') { $headerMixerPid = Parse-HexId $matches[1] }
 }
 
-$effVid = if ($UsbVid) { Parse-HexId $UsbVid } else { $headerVid }
-$effMixerPid = if ($MixerPid) { Parse-HexId $MixerPid } else { $headerMixerPid }
-if (($DevTestIds -or $CheckOnly) -and ($effVid -eq 0 -or $effMixerPid -eq 0)) {
+$effVid = $headerVid
+$effMixerPid = $headerMixerPid
+if ($DevTestIds) {
     $effVid = 0xcafe
     $effMixerPid = 0x4026
+}
+if ($UsbVid) { $effVid = Parse-HexId $UsbVid }
+if ($MixerPid) { $effMixerPid = Parse-HexId $MixerPid }
+if ($CheckOnly -and ($effVid -eq 0 -or $effMixerPid -eq 0)) {
+    $effVid = 0xcafe
+    $effMixerPid = 0x4026
+}
+
+if (!$CheckOnly -and !$DevTestIds -and $effVid -eq 0xcafe) {
+    throw 'Development VID 0xCAFE requires -DevTestIds and must not be built without it.'
 }
 
 if (!$CheckOnly -and ($effVid -eq 0 -or $effMixerPid -eq 0)) {
@@ -76,7 +86,7 @@ namespace BiwamasuMixerGui {
 "@
     [IO.File]::WriteAllText($tempCfg, $cfgSource, [Text.UTF8Encoding]::new($false))
 
-    # Stage 1: Build icon generator bootstrapper and render multi-size U+1F41F fish emoji (.ico) via Direct2D
+    # Stage 1: Build icon generator bootstrapper and render multi-size U+1F41F fish (.ico) from Fluent UI Emoji vector geometry
     & $csc /nologo /codepage:65001 /target:winexe /optimize+ /utf8output `
         /r:System.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll `
         "/out:$tempBootExe" $guiSrc $tempCfg

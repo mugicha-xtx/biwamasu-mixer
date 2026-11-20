@@ -82,7 +82,8 @@ for p in range(0, len(uf2), 512):
 
 assert blocks == [(k, len(blocks)) for k in range(len(blocks))]
 payload = b''.join(memory[k] for k in sorted(memory))
-assert cfg in payload
+assert dev in payload, 'Device descriptor (with expected VID:PID) missing from rx-mixer UF2'
+assert cfg in payload, 'Configuration descriptor missing from rx-mixer UF2'
 
 for s in re.findall(rb'[ -~]{4,}', payload):
     low = s.decode('ascii', 'ignore').lower()

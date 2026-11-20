@@ -74,6 +74,7 @@ static void pump(void) {
  uint32_t now=time_us_32();
  if(active>=0 && !dma_channel_is_busy(channel)) active=-1;
  if(active>=0 && (uint32_t)(now-dma_started)>5000) {
+  hw_clear_bits(&dma_hw->ch[(uint)channel].al1_ctrl,DMA_CH0_CTRL_TRIG_EN_BITS);
   dma_channel_abort(channel); active=-1; uart_deinit(uart0); uart_setup(); s.dma_errors++; transition(5,4);
  }
  if(s.pending) {

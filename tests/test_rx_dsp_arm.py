@@ -6,6 +6,7 @@ import math
 import os
 import pathlib
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -94,7 +95,8 @@ assert max_err_db < 0.01, f'EQ float32 response drifted {max_err_db:.5f} dB'
 
 out = root / 'build-rx-dsp-logic'
 out.mkdir(exist_ok=True)
-(out / 'memory.c').write_text('''
+try:
+    (out / 'memory.c').write_text('''
 #include <stddef.h>
 void *memcpy(void *d,const void *s,size_t n){unsigned char *a=d;const unsigned char *b=s;while(n--)*a++=*b++;return d;}
 void *memset(void *d,int c,size_t n){unsigned char *a=d;while(n--)*a++=c;return d;}
@@ -102,53 +104,56 @@ void *memmove(void *d,const void *s,size_t n){unsigned char *a=d;const unsigned 
 int memcmp(const void *a,const void *b,size_t n){const unsigned char *x=a,*y=b;while(n--){if(*x!=*y)return *x-*y;++x;++y;}return 0;}
 ''', encoding='utf-8')
 
-subprocess.run([
-    str(deps / 'bin/arm-none-eabi-gcc.exe'),
-    '-mcpu=cortex-m0', '-mthumb', '-Os', '-ffreestanding', '-fno-builtin', '-nostdlib',
-    '-Wall', '-Wextra', '-Werror', '-DSELFTEST_STANDALONE',
-    '-Wl,-Ttext=0x10000000,-Tbss=0x20000000,-Tdata=0x20040000,-e,pack_selftest',
-    'firmware/rx-mixer/dsp_core.c',
-    'firmware/rx-mixer/rx_usb.c',
-    'firmware/rx-mixer/selftest_pack.c',
-    'build-rx-dsp-logic/memory.c',
-    '-lgcc', '-o', 'build-rx-dsp-logic/test.elf'
-], cwd=root, check=True)
+    subprocess.run([
+        str(deps / 'bin/arm-none-eabi-gcc.exe'),
+        '-mcpu=cortex-m0', '-mthumb', '-Os', '-ffreestanding', '-fno-builtin', '-nostdlib',
+        '-Wall', '-Wextra', '-Werror', '-DSELFTEST_STANDALONE',
+        '-Wl,-Ttext=0x10000000,-Tbss=0x20000000,-Tdata=0x20040000,-e,pack_selftest',
+        'firmware/rx-mixer/dsp_core.c',
+        'firmware/rx-mixer/rx_usb.c',
+        'firmware/rx-mixer/selftest_pack.c',
+        'build-rx-dsp-logic/memory.c',
+        '-lgcc', '-o', 'build-rx-dsp-logic/test.elf'
+    ], cwd=root, check=True)
 
-uc_path = deps / 'boundary-test'
-if uc_path.exists():
-    sys.path.insert(0, str(uc_path))
+    uc_path = deps / 'boundary-test'
+    if uc_path.exists():
+        sys.path.insert(0, str(uc_path))
 
-try:
-    from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS
-    from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_R0
-    has_unicorn = True
-except ImportError:
-    has_unicorn = False
+    try:
+        from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS
+        from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_R0
+        has_unicorn = True
+    except ImportError:
+        has_unicorn = False
 
-if has_unicorn:
-    elf = (out / 'test.elf').read_bytes()
-    entry, phoff = struct.unpack_from('<II', elf, 24)
-    phsize, phcount = struct.unpack_from('<HH', elf, 42)
-    cpu = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
-    cpu.mem_map(0x10000000, 0x80000)
-    cpu.mem_map(0x20000000, 0x80000)
-    for i in range(phcount):
-        kind, offset, addr, _, size, _, _, _ = struct.unpack_from('<8I', elf, phoff + i * phsize)
-        if kind == 1 and size:
-            cpu.mem_write(addr, elf[offset:offset + size])
-    cpu.reg_write(UC_ARM_REG_SP, 0x2007fff0)
-    cpu.reg_write(UC_ARM_REG_LR, 0x1007fff1)
-    cpu.emu_start(entry | 1, 0x1007fff0, timeout=30000000, count=100000000)
-    assert cpu.reg_read(UC_ARM_REG_PC) == 0x1007fff0, 'Selftest did not return'
-    line = cpu.reg_read(UC_ARM_REG_R0)
-    assert line == 0, f'Production selftest failed at selftest_pack.c:{line}'
-    engine = 'Unicorn 2.1.4 ARM'
-else:
-    line = None
-    engine = 'Skipped (Unicorn not installed); ARM freestanding compile passed'
+    if has_unicorn:
+        elf = (out / 'test.elf').read_bytes()
+        entry, phoff = struct.unpack_from('<II', elf, 24)
+        phsize, phcount = struct.unpack_from('<HH', elf, 42)
+        cpu = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
+        cpu.mem_map(0x10000000, 0x80000)
+        cpu.mem_map(0x20000000, 0x80000)
+        for i in range(phcount):
+            kind, offset, addr, _, size, _, _, _ = struct.unpack_from('<8I', elf, phoff + i * phsize)
+            if kind == 1 and size:
+                cpu.mem_write(addr, elf[offset:offset + size])
+        cpu.reg_write(UC_ARM_REG_SP, 0x2007fff0)
+        cpu.reg_write(UC_ARM_REG_LR, 0x1007fff1)
+        cpu.emu_start(entry | 1, 0x1007fff0, timeout=30000000, count=100000000)
+        assert cpu.reg_read(UC_ARM_REG_PC) == 0x1007fff0, 'Selftest did not return'
+        line = cpu.reg_read(UC_ARM_REG_R0)
+        assert line == 0, f'Production selftest failed at selftest_pack.c:{line}'
+        engine = 'Unicorn 2.1.4 ARM'
+    else:
+        line = None
+        engine = 'Skipped (Unicorn not installed); ARM freestanding compile passed'
+finally:
+    shutil.rmtree(out, ignore_errors=True)
 
 print(json.dumps({
     'passed': True,
+    'arm_emulation_status': 'passed' if has_unicorn else 'skipped',
     'selftest_failure_line': line,
     'eq_max_err_db': round(max_err_db, 6),
     'engine': engine,
