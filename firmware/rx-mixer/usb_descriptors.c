@@ -16,7 +16,7 @@ const tusb_desc_device_t pack_device_descriptor = {
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor = PACK_VID,
     .idProduct = PACK_PID,
-    .bcdDevice = 0x0102,
+    .bcdDevice = 0x0100,
     .iManufacturer = 1,
     .iProduct = 2,
     .iSerialNumber = 3,
@@ -33,6 +33,10 @@ static const uint8_t hid_report_desc[] = {
     0x95, 63,         //   Report Count (63)
     0x09, 0x01,       //   Usage (0x01)
     0xb1, 0x02,       //   Feature (Data,Var,Abs)
+    0x09, 0x02,       //   Usage (0x02)
+    0x81, 0x02,       //   Input (Data,Var,Abs)
+    0x09, 0x03,       //   Usage (0x03)
+    0x91, 0x02,       //   Output (Data,Var,Abs)
     0xc0              // End Collection
 };
 
@@ -53,12 +57,12 @@ _Static_assert(CS_AC_INNER_LEN == 110, "CS_AC entity byte count");
     (AUDIO20_CTRL_RW << AUDIO20_FEATURE_UNIT_CTRL_VOLUME_POS))
 
 const uint8_t pack_configuration_descriptor[] = {
-    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 250),
     TUD_AUDIO20_DESC_IAD(ITF_NUM_AUDIO_CONTROL, 3, 2),
 
     // Interface 0: Audio Control
     TUD_AUDIO20_DESC_STD_AC(ITF_NUM_AUDIO_CONTROL, 0, 2),
-    TUD_AUDIO20_DESC_CS_AC(0x0200, AUDIO20_FUNC_HEADSET, CS_AC_INNER_LEN, 0),
+    TUD_AUDIO20_DESC_CS_AC(0x0200, AUDIO20_FUNC_IO_BOX, CS_AC_INNER_LEN, 0),
 
     // Speaker path (PC Mix -> Pico I2S -> Pimoroni Pico Audio Pack)
     TUD_AUDIO20_DESC_CLK_SRC(UAC2_ENTITY_SPK_CLOCK, AUDIO20_CLOCK_SOURCE_ATT_INT_FIX_CLK, 5, 0, 0),
@@ -69,9 +73,9 @@ const uint8_t pack_configuration_descriptor[] = {
     TUD_AUDIO20_DESC_OUTPUT_TERM(UAC2_ENTITY_SPK_OUTPUT_TERMINAL, AUDIO_TERM_TYPE_OUT_HEADPHONES, 0,
         UAC2_ENTITY_SPK_FEATURE_UNIT, UAC2_ENTITY_SPK_CLOCK, 0, 4),
 
-    // Mic path (Switch Raw PCM -> OBS Capture)
+    // Line-In capture path (Switch Raw PCM -> OBS Capture)
     TUD_AUDIO20_DESC_CLK_SRC(UAC2_ENTITY_MIC_CLOCK, AUDIO20_CLOCK_SOURCE_ATT_EXT_CLK, 5, 0, 0),
-    TUD_AUDIO20_DESC_INPUT_TERM(UAC2_ENTITY_MIC_INPUT_TERMINAL, AUDIO_TERM_TYPE_IN_GENERIC_MIC, 0,
+    TUD_AUDIO20_DESC_INPUT_TERM(UAC2_ENTITY_MIC_INPUT_TERMINAL, AUDIO_TERM_TYPE_EXTERNAL_LINE_CONNECTOR, 0,
         UAC2_ENTITY_MIC_CLOCK, 2, 0x03, 0, 0, 5),
     TUD_AUDIO20_DESC_FEATURE_UNIT(UAC2_ENTITY_MIC_FEATURE_UNIT, UAC2_ENTITY_MIC_INPUT_TERMINAL, 0,
         FU_CTRL_MUTE_VOL, FU_CTRL_MUTE_VOL, FU_CTRL_MUTE_VOL),

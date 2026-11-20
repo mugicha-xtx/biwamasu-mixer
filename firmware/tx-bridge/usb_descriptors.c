@@ -10,7 +10,7 @@ const tusb_desc_device_t probe_device_descriptor = {
     .bLength = sizeof(tusb_desc_device_t), .bDescriptorType = TUSB_DESC_DEVICE,
     .bcdUSB = 0x0200, .bDeviceClass = 0, .bDeviceSubClass = 0, .bDeviceProtocol = 0,
     .bMaxPacketSize0 = 64, .idVendor = (uint16_t)USB_VID,
-    .idProduct = (uint16_t)BRIDGE_USB_PID, .bcdDevice = 0x0002,
+    .idProduct = (uint16_t)BRIDGE_USB_PID, .bcdDevice = 0x0100,
     .iManufacturer = 1, .iProduct = 2, .iSerialNumber = 3, .bNumConfigurations = 1
 };
 
@@ -21,7 +21,10 @@ enum { AC_LENGTH = 9 + 12 + 9, AUDIO_LENGTH = 9 + AC_LENGTH + 9 + 9 + 7 + 11 + 9
 static const uint8_t hid_report[] = {
     0x06, 0x00, 0xff, 0x09, 0x01, 0xa1, 0x01,
     0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 63,
-    0x09, 0x01, 0xb1, 0x02, 0xc0  // 63-byte feature, report ID 0
+    0x09, 0x01, 0xb1, 0x02, // 63-byte Feature (report ID 0)
+    0x09, 0x02, 0x81, 0x02, // 63-byte Input (enables EP 0x82 IN)
+    0x09, 0x03, 0x91, 0x02, // 63-byte Output
+    0xc0
 };
 const uint8_t *tud_hid_descriptor_report_cb(uint8_t instance) { (void)instance; return hid_report; }
 #endif

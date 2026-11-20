@@ -11,3 +11,8 @@ captures/
 raw_photos/
 *.zip
 __pycache__/
+.vs/
+*.user
+*.tmp
+Thumbs.db
+Desktop.ini

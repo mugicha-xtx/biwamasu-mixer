@@ -90,6 +90,7 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     dsp_eq_t *eq = &m->eq;
     CHECK(!m->params.eq_enabled && !eq->enabled);
     CHECK(m->params.master_db_x100 == -4500);
+    CHECK(m->params.rx_pin_mode == 13u);
     CHECK(eq->preamp_linear == 1.0f);
 
     dsp_mixer_set_eq_enabled(m, true);

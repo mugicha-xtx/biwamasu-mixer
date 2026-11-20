@@ -39,7 +39,10 @@ static void transition(uint8_t state,uint16_t reason) {
 }
 static void uart_setup(void) {
  baud=uart_init(uart0,3000000); uart_set_format(uart0,8,1,UART_PARITY_NONE);
- uart_set_hw_flow(uart0,false,false); uart_set_fifo_enabled(uart0,true); gpio_set_function(0,GPIO_FUNC_UART);
+ uart_set_hw_flow(uart0,false,false); uart_set_fifo_enabled(uart0,true);
+ gpio_set_function(0,GPIO_FUNC_UART);
+ gpio_set_drive_strength(0,GPIO_DRIVE_STRENGTH_2MA);
+ gpio_set_slew_rate(0,GPIO_SLEW_RATE_SLOW);
  dma_channel_config c=dma_channel_get_default_config(channel);
  channel_config_set_transfer_data_size(&c,DMA_SIZE_8); channel_config_set_read_increment(&c,true);
  channel_config_set_write_increment(&c,false); channel_config_set_dreq(&c,uart_get_dreq(uart0,true));
@@ -141,11 +144,18 @@ void tud_resume_cb(void) { transition(s.alt?2:1,0); }
 static bool rate_request(const tusb_control_request_t *r) { return r->wIndex==1 && r->wValue==0x100 && r->wLength==3; }
 bool tud_audio_set_req_ep_cb(uint8_t port,const tusb_control_request_t *r,uint8_t *b) { (void)port; return rate_request(r)&&r->bRequest==AUDIO10_CS_REQ_SET_CUR&&b[0]==0x80&&b[1]==0xbb&&b[2]==0; }
 bool tud_audio_get_req_ep_cb(uint8_t port,const tusb_control_request_t *r) {
- uint8_t b[]={0x80,0xbb,0}; return rate_request(r)&&r->bRequest==AUDIO10_CS_REQ_GET_CUR&&tud_audio_buffer_and_schedule_control_xfer(port,r,b,3);
+ if(!rate_request(r)) return false;
+ if(r->bRequest==AUDIO10_CS_REQ_GET_CUR || r->bRequest==AUDIO10_CS_REQ_GET_MIN || r->bRequest==AUDIO10_CS_REQ_GET_MAX) {
+  uint8_t b[]={0x80,0xbb,0}; return tud_audio_buffer_and_schedule_control_xfer(port,r,b,3);
+ }
+ if(r->bRequest==AUDIO10_CS_REQ_GET_RES) {
+  uint8_t b[]={0,0,0}; return tud_audio_buffer_and_schedule_control_xfer(port,r,b,3);
+ }
+ return false;
 }
 #if PROBE_HID
 uint16_t tud_hid_get_report_cb(uint8_t itf,uint8_t id,hid_report_type_t type,uint8_t *out,uint16_t len) {
- (void)itf; if(id || type!=HID_REPORT_TYPE_FEATURE) return 0;
+ (void)itf; if(id || (type!=HID_REPORT_TYPE_FEATURE && type!=HID_REPORT_TYPE_INPUT)) return 0;
  state_t x=snapshot(); uint8_t r[63]={0}; memcpy(r,"S2B4",4); r[4]=2; r[5]=x.state;
  bridge_put32(r+8,x.callback_max); bridge_put32(r+12,x.loop_max); bridge_put32(r+16,x.queue_age_max);
  bridge_put32(r+20,x.boundary_drop); bridge_put32(r+24,x.bad); bridge_put32(r+28,x.qdrop+x.stale);
@@ -155,7 +165,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf,uint8_t id,hid_report_type_t type,uin
 }
 void tud_hid_set_report_cb(uint8_t itf,uint8_t id,hid_report_type_t type,const uint8_t *b,uint16_t len) {
  (void)itf;
- if(!id && type==HID_REPORT_TYPE_FEATURE && len>=1u && b[0]==0x7fu) boot_requested=time_us_32();
+ if(!id && (type==HID_REPORT_TYPE_FEATURE || type==HID_REPORT_TYPE_OUTPUT) && len>=1u && b[0]==0x7fu) boot_requested=time_us_32();
 }
 #endif
 int main(void) {

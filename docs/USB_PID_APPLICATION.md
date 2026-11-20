@@ -72,4 +72,4 @@
 1. **`biwamasu-mixer-tx`（`firmware/tx-bridge`, `BRIDGE_USB_PID`）**
    - ゲーム機（Switch 2 ドック等）に接続する UAC 1.0 ステレオ 48 kHz スピーカー受信機 ＋ 診断/BOOTSEL 用 Vendor HID（`S2B4`）。
 2. **`biwamasu-mixer-rx`（`firmware/rx-mixer`, `MIXER_USB_PID`）**
-   - Windows PC に接続する UAC 2.0 複合ヘッドセット（PC ミックス再生用スピーカー OUT ＋ OBS 無加工録音用マイク IN）＋ 11 バンド EQ・音量・フラッシュ保存制御用 Vendor HID（`UAP1`）。
+   - Windows PC に接続する UAC 2.0 複合オーディオインターフェース（PC ミックス再生用ヘッドホン OUT ＋ OBS 無加工録音用ライン IN）＋ 11 バンド EQ・音量・フラッシュ保存制御用 Vendor HID（`UAP1`）。

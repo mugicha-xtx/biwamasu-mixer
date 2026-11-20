@@ -251,13 +251,16 @@ static void resume_audio_after_flash(void) {
 
 static void on_uart_packet(const rx_packet_t *p, void *ctx) {
     (void)ctx;
+    uint32_t now = time_us_32();
+    last_rx_activity_us = now;
+    last_rx_byte_us = now;
     if (p->type == 2) {
         source_drops = p->drops;
         source_bad = p->bad;
         source_state = get_u16le(p->pcm + 16) | ((uint32_t)get_u16le(p->pcm + 18) << 16);
     }
     if (p->type == 1) {
-        last_audio = time_us_32();
+        last_audio = now;
         timed_out = false;
     }
 
@@ -311,11 +314,6 @@ static void uart_poll(void) {
     uart_cursor = (uart_cursor + count) & 4095u;
     uart_available -= count;
 
-    if (count > 0u) {
-        last_rx_activity_us = now;
-        last_rx_byte_us = now;
-    }
-
     for (unsigned i = 0; i < count; i++) {
         if (scratch[i] & 0xf00u) {
             uart_errors++;
@@ -359,8 +357,14 @@ static void pio_clock_servo_poll(uint32_t now) {
     if (mixer.sw_primed) {
         uint32_t lvl = dsp_sw_level(&mixer);
         sw_lvl_lp += 0.10f * ((float)lvl - sw_lvl_lp);
-        if (sw_lvl_lp > (float)DSP_SW_TARGET + 40.0f) delta = -1;
-        else if (sw_lvl_lp < (float)DSP_SW_TARGET) delta = +1;
+        float err = sw_lvl_lp - (float)DSP_SW_TARGET;
+        if (err > 12.0f) {
+            int32_t steps = 1 + (int32_t)((err - 12.0f) * (1.0f / 12.0f));
+            delta = -(steps > 6 ? 6 : steps);
+        } else if (err < -12.0f) {
+            int32_t steps = 1 + (int32_t)((-err - 12.0f) * (1.0f / 12.0f));
+            delta = (steps > 6 ? 6 : steps);
+        }
     } else {
         sw_lvl_lp = (float)DSP_SW_TARGET;
     }
@@ -470,26 +474,33 @@ void tud_mount_cb(void) {
     restore_interrupts(irq);
 }
 
-void tud_event_hook_cb(uint8_t port, uint32_t event, bool isr) {
-    (void)port; (void)isr;
-    if (event == DCD_EVENT_BUS_RESET_START || event == DCD_EVENT_BUS_RESET_END) {
-        spk_active = false;
-        mic_active = false;
-        suspended = false;
-        dsp_pc_set_active(&mixer, false);
-        rx_usb_set_active(&mic, false);
-        bus_resets++;
-    }
-}
-
-void tud_umount_cb(void) {
+static void reset_usb_host_state(bool count_bus_reset) {
     uint32_t irq = save_and_disable_interrupts();
     spk_active = false;
     mic_active = false;
     suspended = false;
+    for (uint8_t ch = 0; ch <= 2u; ch++) {
+        win_vol_q8[ch] = 0;
+        dsp_mixer_set_win_vol_q8(&mixer, ch, 0);
+        dsp_mixer_set_win_mute(&mixer, ch, false);
+        rx_usb_set_vol_q8(&mic, ch, 0);
+        rx_usb_set_mute(&mic, ch, false);
+    }
     dsp_pc_set_active(&mixer, false);
     rx_usb_set_active(&mic, false);
+    if (count_bus_reset) bus_resets++;
     restore_interrupts(irq);
+}
+
+void tud_event_hook_cb(uint8_t port, uint32_t event, bool isr) {
+    (void)port; (void)isr;
+    if (event == DCD_EVENT_BUS_RESET_START || event == DCD_EVENT_BUS_RESET_END) {
+        reset_usb_host_state(event == DCD_EVENT_BUS_RESET_END);
+    }
+}
+
+void tud_umount_cb(void) {
+    reset_usb_host_state(false);
 }
 
 void tud_suspend_cb(bool remote) {
@@ -611,7 +622,7 @@ static uint32_t f32_bits(float v) {
 
 uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, uint8_t *out, uint16_t len) {
     (void)itf;
-    if (id || type != HID_REPORT_TYPE_FEATURE) return 0;
+    if (id || (type != HID_REPORT_TYPE_FEATURE && type != HID_REPORT_TYPE_INPUT)) return 0;
     uint8_t b[63] = {0};
     memcpy(b, "UAP1", 4);
     b[4] = 1u;
@@ -699,7 +710,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, 
 
 void tud_hid_set_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, const uint8_t *b, uint16_t len) {
     (void)itf;
-    if (id || type != HID_REPORT_TYPE_FEATURE || len < 2u) return;
+    if (id || (type != HID_REPORT_TYPE_FEATURE && type != HID_REPORT_TYPE_OUTPUT) || len < 2u) return;
 
     if (b[0] == 0x10u && b[1] <= 8u) {
         hid_page = b[1];
@@ -880,10 +891,13 @@ int main(void) {
             mixer.params.win_vol_db_x100[2] = wvol2;
             mixer.params.win_mute_mask = wmute;
             mixer.params.eq_enabled = false;
-            mixer.params.rx_pin_mode = 0u;
+            mixer.params.rx_pin_mode = 13u;
             mixer.eq.reset_pending = true;
             restore_interrupts(irq);
             dsp_mixer_recompute_gains(&mixer);
+            if (active_rx_pin != UART_RX_PIN_PRIMARY) {
+                apply_uart_rx_pin(UART_RX_PIN_PRIMARY);
+            }
         }
 
         if (save_requested) {

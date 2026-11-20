@@ -3014,7 +3014,7 @@ namespace BiwamasuMixerGui
             short gameX100 = ClampShort(Math.Round(gameDb * 100.0), -6000, 1200);
             short masterX100 = ClampShort(Math.Round(masterDb * 100.0), -6000, 600);
             short pcX100 = ClampShort(Math.Round(pcTrimDb * 100.0), -2400, 1200);
-            byte pinByte = (rxPinMode == 0 || rxPinMode == 1 || rxPinMode == 13) ? rxPinMode : (byte)0;
+            byte pinByte = (rxPinMode == 0 || rxPinMode == 1 || rxPinMode == 13) ? rxPinMode : (byte)13;
 
             byte[] cmd = new byte[9];
             cmd[0] = 0x40;
@@ -3325,7 +3325,7 @@ namespace BiwamasuMixerGui
                     "・受信中：正常にデジタル音声リンクが確立しています。\r\n" +
                     "・待機中：Switch 2 がスリープ中・未接続、または Switch 2 側の出力先が「Biwamasu Mixer TX」になっていない、もしくはブレッドボード配線（GP0→33Ω→GP13、GND共通線）が抜けています。\r\n\r\n" +
                     "■ OBS: 動作中 / 待機中\r\n" +
-                    "OBS Studio 等の録音・配信ソフトが「マイク (Biwamasu Mixer)」を開いて音声を取り込んでいるときに「動作中」になります。\r\n\r\n" +
+                    "OBS Studio 等の録音・配信ソフトが「ライン (Biwamasu Mixer)」を開いて音声を取り込んでいるときに「動作中」になります。\r\n\r\n" +
                     "■ [音割れ検知] 表示\r\n" +
                     "普段は何も表示されませんが、再生中にマイコン内部でデジタル上限（0 dBFS）を超える音割れ（クリッピング）が実際に発生したときだけ警告が表示されます。表示された場合は、EQ詳細設定で [自動調整] を押してプリアンプを下げるか、音量補正・マスター音量を下げてください。\r\n\r\n" +
                     "■ [再読込] ボタン\r\n" +
@@ -3338,7 +3338,7 @@ namespace BiwamasuMixerGui
                     "スライダーをダブルクリックすると安全な初期値（-45.0 dB）に戻ります。\r\n\r\n" +
                     "■ Switch 2 補正（-60.0 〜 +12.0 dB / 初期値 0.0 dB）\r\n" +
                     "Switch 2 のゲーム音だけの音量を前後させます。スライダーをダブルクリックすると 0.0 dB に戻ります。\r\n" +
-                    "（※OBS録音用のマイク入力には影響せず、OBSへは常に劣化なしの生音がそのまま送られます）\r\n\r\n" +
+                    "（※OBS録音用のライン入力には影響せず、OBSへは常に劣化なしの生音がそのまま送られます）\r\n\r\n" +
                     "■ PC 音量補正（-24.0 〜 +12.0 dB / 初期値 0.0 dB）\r\n" +
                     "PC側の音（Discordや動画など）の基準音量を前後させます（ダブルクリックで 0.0 dB）。\r\n" +
                     "普段のPC音量の上げ下げは、Windows右下の標準音量スライダーでもそのまま操作できます。\r\n\r\n" +
@@ -3438,7 +3438,7 @@ namespace BiwamasuMixerGui
                     "■ ツール → Windows サウンド設定を開く\r\n" +
                     "Windows標準のサウンドコントロールパネル（mmsys.cpl）を開きます。\r\n" +
                     "・再生タブ：「ヘッドホン (Biwamasu Mixer)」を既定のデバイスに設定します。\r\n" +
-                    "・録音タブ：OBSで取り込む「マイク (Biwamasu Mixer)」のレベルが「100」（0.0 dB 等倍）、かつ「オーディオの強化」がオフになっているか確認できます。\r\n\r\n" +
+                    "・録音タブ：OBSで取り込む「ライン (Biwamasu Mixer)」のレベルが「100」（0.0 dB 等倍）、かつ「オーディオの強化」がオフになっているか確認できます。\r\n\r\n" +
                     "■ ツール → BOOTSELモードへ切替\r\n" +
                     "基板の白いボタンを押さずに、PC側の Pico② をファームウェア更新モード（USBドライブが開く状態）へ切り替えます。新しい biwamasu-mixer-rx.uf2 を書き込むとき以外は使わなくて大丈夫です。\r\n\r\n" +
                     "■ よくある質問・トラブル対処\r\n" +
@@ -5401,7 +5401,7 @@ namespace BiwamasuMixerGui
         private bool _deviceConnected;
         private bool _testToneActive;
         private bool _hasUnsavedChanges;
-        private byte _lastRxPinMode;
+        private byte _lastRxPinMode = 13;
         private float _lastHwPreampLin = 1.0f;
         private float[][] _lastHwCoeffs;
 

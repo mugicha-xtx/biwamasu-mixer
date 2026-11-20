@@ -24,7 +24,7 @@ This project uses off-the-shelf open hardware modules wired on a standard solder
 
 | Net Name | From (`U1` TX Bridge) | Through | To (`U2` RX Mixer) | Notes |
 |---|---|---|---|---|
-| `UART_TX_RX` | Physical Pin `1` (`GP0`) | **`R1` (`33Ω`)** + jumper | Physical Pin `17` (`GP13`) | Unidirectional 3,000,000 bps 8N1 DMA (`GP1` Pin `2` also auto-detected) |
+| `UART_TX_RX` | Physical Pin `1` (`GP0`) | **`R1` (`33Ω`)** + jumper | Physical Pin `17` (`GP13`) | Unidirectional 3,000,000 bps 8N1 DMA (default `GP13`; `GP1` Pin `2` selectable via HID) |
 | `GND_LINK` | Physical Pin `3` (`GND`) | Direct wire | Physical Pin `18` (`GND`) | Common logic reference (any Pico GND pin such as Pin `18` or `23` is tied to the same plane) |
 
 > **Power Isolation Rule**: Never connect `VBUS` (`Pin 40`), `VSYS` (`Pin 39`), or `3V3(OUT)` (`Pin 36`) between `U1` and `U2`. Each Pico 2 H is powered solely by its own USB host.

@@ -114,7 +114,7 @@ unsigned rx_usb_level(const rx_usb_audio_t *a) {
     return a->write - a->read;
 }
 
-void rx_usb_flush(rx_usb_audio_t *a) {
+static void rx_usb_flush_unlocked(rx_usb_audio_t *a) {
     a->discarded += rx_usb_level(a);
     a->read = a->write;
     a->primed = false;
@@ -124,9 +124,19 @@ void rx_usb_flush(rx_usb_audio_t *a) {
     a->low = RX_CAPACITY;
 }
 
+void rx_usb_flush(rx_usb_audio_t *a) {
+    uint32_t irq = 0;
+    dsp_lock_irq(&irq);
+    rx_usb_flush_unlocked(a);
+    dsp_unlock_irq(irq);
+}
+
 void rx_usb_set_active(rx_usb_audio_t *a, bool on) {
-    rx_usb_flush(a);
+    uint32_t irq = 0;
+    dsp_lock_irq(&irq);
+    rx_usb_flush_unlocked(a);
     a->active = on;
+    dsp_unlock_irq(irq);
 }
 
 void rx_usb_mark_ended(rx_usb_audio_t *a) {

@@ -194,7 +194,7 @@ void dsp_mixer_init(dsp_mixer_t *m) {
     m->params.win_vol_db_x100[2] = 0;
     m->params.win_mute_mask = 0;
     m->params.eq_enabled = false;
-    m->params.rx_pin_mode = 0;
+    m->params.rx_pin_mode = 13;
     dsp_eq_init_flat(&m->eq, false);
     recompute_gains_unlocked(m);
     m->cur_game_gain = m->target_game_gain;

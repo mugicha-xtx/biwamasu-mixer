@@ -14,7 +14,7 @@
 ![Biwamasu Mixer 配線図](hardware/schematic.svg)
 
 - **超低遅延（Switch 2 → ヘッドホン 約 4.6〜4.9 ms）**：Windows のソフトウェアミキサーを経由せず、`Pico①`（`Biwamasu Mixer TX`）→ 3 Mbps UART（`33Ω` 抵抗経由）→ `Pico②`（`Biwamasu Mixer`）→ I2S DAC（`PCM5100A` ＋ `PAM8908`）へ直接出力します。
-- **OBS 用の生音分岐**：Switch 2 から届いた 48kHz / 16bit / ステレオ生音は、EQ や音量処理に入る手前で USB Audio Class 2.0 入力（`マイク (Biwamasu Mixer)`、最大 `0.0 dB` 上限 Feature Unit 実装済み）へ無加工のまま送られます。
+- **OBS 用の生音分岐**：Switch 2 から届いた 48kHz / 16bit / ステレオ生音は、EQ や音量処理に入る手前で USB Audio Class 2.0 入力（`ライン (Biwamasu Mixer)`、最大 `0.0 dB` 上限 Feature Unit 実装済み）へ無加工のまま送られます。
 - **ミックス後 11 バンド EQ**：Switch 2 音と PC 音（4点エルミート補間リサンプラでクロック誤差を吸収）をデジタル合成した後段（`MasterGain` の手前）で、Peace 形式対応の最大 11 バンド EQ とマスター音量を適用します（初期状態は EQ OFF・`-45.0 dB`、設定はフラッシュ保存可）。
 - **対応ヘッドホン**：3.5mm 有線専用です（鳴らしにくい機種は `LINE OUT` から外部アナログアンプへ接続可能。USB／無線ヘッドセットは非対応のため MIT ライセンスで各自改造が必要です）。
 
@@ -244,15 +244,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Control-BiwamasuMixer.ps1
 
 ### Windows と OBS の設定
 - PCの音声出力先を 「ヘッドホン (Biwamasu Mixer)」 にしましょう。Windowsの音量スライダーはPC音（Discordや動画など）だけに効くので、通話音とのバランス調整も簡単です！
-- OBSの設定：OBSのソースから「音声入力キャプチャ」を追加し、デバイスに 「マイク (Biwamasu Mixer)」 を選びます。Windows側のマイク入力音量を「100」にしておけば、音質劣化ゼロ・EQなしの綺麗なSwitch2の音がそのままOBSに入ります！
+- OBSの設定：OBSのソースから「音声入力キャプチャ」を追加し、デバイスに 「ライン (Biwamasu Mixer)」 を選びます。Windows側の入力音量を「100」にしておけば、音質劣化ゼロ・EQなしの綺麗なSwitch2の音がそのままOBSに入ります！
 
 #### 💡 補足：Windows オーディオ強化・OBS 微調整の目安（AIによる補足）
-- Windows「設定」→「システム」→「サウンド」→「入力」→ `マイク (Biwamasu Mixer)` 内の **「オーディオの強化」は「オフ」** にしてください（入力 `100` は上限 `0.0 dB` 設計のため自動ブーストは掛かりません）。
+- Windows「設定」→「システム」→「サウンド」→「入力」→ `ライン (Biwamasu Mixer)` 内の **「オーディオの強化」は「オフ」** にしてください（入力 `100` は上限 `0.0 dB` 設計のため自動ブーストは掛かりません）。
 - **OBS 音量スライダー目安**：ゲーム音のみ録画は **`-3.0 dB 〜 0.0 dB`**、自分の声や Discord も混ぜる場合は **`-15 dB 〜 -10 dB`** 付近。
-- **OBS「同期オフセット」目安**：本機の USB 音声取り込み遅延は数 ms と非常に小さいため、お使いの HDMI キャプチャボード側の映像処理遅延（機種により数 ms〜数十 ms）の分だけ音の方が早く届く場合があります。ズレが気になる場合はテスト録画で確認し、OBS の「オーディオの詳細プロパティ」→ `マイク (Biwamasu Mixer)` の **「同期オフセット」にプラス値（映像遅延に相当する ms）** を入れて合わせてください。
+- **OBS「同期オフセット」目安**：本機の USB 音声取り込み遅延は数 ms と非常に小さいため、お使いの HDMI キャプチャボード側の映像処理遅延（機種により数 ms〜数十 ms）の分だけ音の方が早く届く場合があります。ズレが気になる場合はテスト録画で確認し、OBS の「オーディオの詳細プロパティ」→ `ライン (Biwamasu Mixer)` の **「同期オフセット」にプラス値（映像遅延に相当する ms）** を入れて合わせてください。
 
 ### 🎤 マイク（Discord通話・配信）を併用する場合の繋ぎ方（AIによる補足）
-本機に自分の声を入れるマイク端子はありません（Windows上に現れる `マイク (Biwamasu Mixer)` は Switch 2 のゲーム音取り込み専用です）。ボイスチャットや配信で使うマイクは **PC側** に接続し、手持ちの機材に合わせて以下のように設定してください。
+本機に自分の声を入れるマイク端子はありません（Windows上に現れる `ライン (Biwamasu Mixer)` は Switch 2 のゲーム音取り込み専用です）。ボイスチャットや配信で使うマイクは **PC側** に接続し、手持ちの機材に合わせて以下のように設定してください。
 
 - **USBマイク / PC直挿しマイクを使う場合**：
   - マイクはそのまま PC に繋ぎます。
@@ -288,9 +288,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Control-BiwamasuMixer.ps1
    - Enumerates as **`Biwamasu Mixer TX`**: a **UAC 1.0 stereo 48 kHz speaker receiver + Vendor HID interface (`S2B4`)** with software BOOTSEL support.
    - Receives digital stereo PCM over USB from the console host and streams packets over UART without re-encoding.
 2. **`firmware/rx-mixer` (`biwamasu-mixer-rx.uf2`, `MIXER_USB_PID`) — PC USB Host Port**
-   - Enumerates as **`Biwamasu Mixer`**: a **UAC 2.0 composite Headset (Speaker OUT + Microphone IN) + Vendor HID control interface (`UAP1`)**.
+   - Enumerates as **`Biwamasu Mixer`**: a **UAC 2.0 composite audio interface (Headphone OUT + Line IN) + Vendor HID control interface (`UAP1`)**.
    - **Speaker OUT & Mixed Bus EQ**: Accepts 48 kHz stereo PC audio, resamples via 4-point Catmull-Rom Hermite interpolation, and mixes digitally with UART console audio before applying the shared **post-mix 11-band floating-point biquad EQ** (`~5 ms` console-to-headphone latency, default EQ OFF / `-45.0 dB` master gain) and 32-bit PIO I2S output.
-   - **Microphone IN**: Branches upstream of the mixer/EQ and streams bit-exact pre-EQ raw console PCM (`0.0 dB` max Feature Unit so Windows level `100` is unity pass-through with no OS mic boost) for clean OBS recording.
+   - **Line IN (OBS Capture)**: Branches upstream of the mixer/EQ and streams bit-exact pre-EQ raw console PCM (`0.0 dB` max Feature Unit so Windows level `100` is unity pass-through with no OS mic boost) for clean OBS recording.
    - **Vendor HID**: Allows the native Windows setting tool (`Biwamasu-Mixer Setting tool.exe`, built from `host-gui/BiwamasuMixerGui.cs`) or PowerShell CLI (`scripts/Control-BiwamasuMixer.ps1`) to load/edit 11-band EQ filters (`.peace` and `.txt`), adjust gains, save configuration to flash, read diagnostics, or enter BOOTSEL.
 
 ### Build & Dependencies
