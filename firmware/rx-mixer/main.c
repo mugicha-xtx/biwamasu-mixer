@@ -23,8 +23,8 @@ enum {
     PIN_I2S_BCK = 10,
     PIN_I2S_LRCK = 11,
     PIN_AUDIO_MUTE = 22,
-    UART_RX_PIN_PRIMARY = 13,
-    UART_RX_PIN_ALT = 1
+    UART_RX_PIN_PRIMARY = 1,
+    UART_RX_PIN_ALT = 13
 };
 
 // RP2350 endless mode UART RX ring (8 KB aligned)
@@ -58,7 +58,6 @@ static float sw_lvl_lp = (float)DSP_SW_TARGET;
 
 static uint8_t active_rx_pin = UART_RX_PIN_PRIMARY;
 static uint32_t rx_pin_switches = 0;
-static uint32_t mode = 0; // 0 = mix, 1 = L/R test tone
 static uint32_t hid_page = 0;
 static uint32_t boot_requested = 0;
 static uint32_t flash_saves = 0;
@@ -71,10 +70,16 @@ static bool suspended = false;
 static bool timed_out = false;
 static int16_t win_vol_q8[3] = {0, 0, 0};
 
+typedef enum {
+    EQ_STAGE_IDLE = 0,
+    EQ_STAGE_COLLECTING = 1,
+    EQ_STAGE_ABORTED = 2
+} eq_stage_state_t;
+
 static dsp_biquad_coeff_t staged_eq_coeffs[DSP_EQ_BANDS];
 static float staged_eq_preamp = 1.0f;
 static uint16_t staged_eq_band_mask = 0;
-static bool eq_staging_active = false;
+static eq_stage_state_t eq_stage_state = EQ_STAGE_IDLE;
 static uint32_t hid_eq_words[1 + DSP_EQ_BANDS * 5];
 
 void dsp_lock_irq(uint32_t *state_out) {
@@ -148,6 +153,7 @@ static void apply_uart_rx_pin(uint8_t pin) {
     while (uart_is_readable(uart0)) (void)uart_get_hw(uart0)->dr;
     uart_get_hw(uart0)->rsr = 0;
     rx_parser_reset(&parser);
+    source_state = 0;
     rx_usb_flush(&mic);
     dsp_sw_flush(&mixer);
     uart_dma_start();
@@ -237,6 +243,7 @@ static void pause_audio_for_flash(void) {
 }
 
 static void resume_audio_after_flash(void) {
+    dsp_pc_flush(&mixer);
     i2s_configure_and_start();
     sleep_ms(15);
     if (selftest_line == 0u) {
@@ -274,19 +281,21 @@ static void on_uart_packet(const rx_packet_t *p, void *ctx) {
 }
 
 static void uart_poll(void) {
-    uint32_t now = time_us_32();
-    if ((uint32_t)(now - poll_last) > 13000u) {
+    uint32_t poll_now = time_us_32();
+    if ((uint32_t)(poll_now - poll_last) > 13000u) {
         dma_overrun++;
         rx_parser_reset(&parser);
+        source_state = 0;
         rx_usb_flush(&mic);
         dsp_sw_flush(&mixer);
         uart_dma_start();
         return;
     }
-    poll_last = now;
+    poll_last = poll_now;
     if (!dma_channel_is_busy((uint)uart_dma_ch)) {
         dma_faults++;
         rx_parser_reset(&parser);
+        source_state = 0;
         rx_usb_flush(&mic);
         dsp_sw_flush(&mixer);
         uart_dma_start();
@@ -301,6 +310,7 @@ static void uart_poll(void) {
     if (uart_available > 4096u - 512u) {
         dma_overrun++;
         rx_parser_reset(&parser);
+        source_state = 0;
         rx_usb_flush(&mic);
         dsp_sw_flush(&mixer);
         uart_dma_start();
@@ -319,6 +329,7 @@ static void uart_poll(void) {
             uart_errors++;
             uart_get_hw(uart0)->rsr = 0;
             rx_parser_reset(&parser);
+            source_state = 0;
             rx_usb_flush(&mic);
             dsp_sw_flush(&mixer);
             continue;
@@ -327,19 +338,23 @@ static void uart_poll(void) {
         rx_feed(&parser, &byte, 1u, on_uart_packet, NULL);
     }
 
-    if (mixer.params.rx_pin_mode == 0u) {
-        if (!parser.locked && (uint32_t)(now - last_rx_activity_us) > 150000u) {
-            uint8_t next_pin = (active_rx_pin == UART_RX_PIN_PRIMARY) ? UART_RX_PIN_ALT : UART_RX_PIN_PRIMARY;
-            rx_pin_switches++;
-            last_rx_activity_us = now;
-            apply_uart_rx_pin(next_pin);
-        } else if (parser.locked && (uint32_t)(now - last_rx_byte_us) > 1000000u) {
-            rx_parser_reset(&parser);
-            last_rx_activity_us = now;
-        }
+    // Sample post-feed time so timestamps updated inside on_uart_packet() never underflow.
+    uint32_t post_rx_now = time_us_32();
+    if (parser.locked && (uint32_t)(post_rx_now - last_rx_byte_us) > 1000000u) {
+        rx_parser_reset(&parser);
+        source_state = 0;
+        last_rx_activity_us = post_rx_now;
+        last_rx_byte_us = post_rx_now;
+    } else if (mixer.params.rx_pin_mode == DSP_RX_PIN_MODE_AUTO &&
+               !parser.locked && (uint32_t)(post_rx_now - last_rx_activity_us) > 150000u) {
+        uint8_t next_pin = (active_rx_pin == UART_RX_PIN_PRIMARY) ? UART_RX_PIN_ALT : UART_RX_PIN_PRIMARY;
+        rx_pin_switches++;
+        last_rx_activity_us = post_rx_now;
+        last_rx_byte_us = post_rx_now;
+        apply_uart_rx_pin(next_pin);
     }
 
-    if (last_audio && !timed_out && (uint32_t)(time_us_32() - last_audio) > 100000u) {
+    if (last_audio && !timed_out && (uint32_t)(post_rx_now - last_audio) > 100000u) {
         uint32_t irq = save_and_disable_interrupts();
         rx_usb_mark_ended(&mic);
         dsp_sw_mark_ended(&mixer);
@@ -479,6 +494,8 @@ static void reset_usb_host_state(bool count_bus_reset) {
     spk_active = false;
     mic_active = false;
     suspended = false;
+    eq_stage_state = EQ_STAGE_IDLE;
+    staged_eq_band_mask = 0;
     for (uint8_t ch = 0; ch <= 2u; ch++) {
         win_vol_q8[ch] = 0;
         dsp_mixer_set_win_vol_q8(&mixer, ch, 0);
@@ -561,7 +578,7 @@ bool tud_audio_get_req_entity_cb(uint8_t port, const tusb_control_request_t *r) 
             if (r->bRequest == AUDIO20_CS_REQ_RANGE) {
                 audio20_control_range_2_n_t(1) rv = {
                     .wNumSubRanges = 1,
-                    .subrange[0] = { .bMin = (int16_t)(-60 * 256), .bMax = 0, .bRes = 128 }
+                    .subrange[0] = { .bMin = DSP_WIN_VOL_Q8_MIN, .bMax = DSP_WIN_VOL_Q8_MAX, .bRes = 128 }
                 };
                 return tud_audio_buffer_and_schedule_control_xfer(port, r, &rv, sizeof(rv));
             }
@@ -600,8 +617,8 @@ bool tud_audio_set_req_entity_cb(uint8_t port, const tusb_control_request_t *r, 
         if (ctrl_sel == AUDIO20_FU_CTRL_VOLUME) {
             TU_VERIFY(r->wLength == 2u);
             int16_t vq8 = ((const audio20_control_cur_2_t *)buf)->bCur;
-            if (vq8 < -15360) vq8 = -15360;
-            if (vq8 > 0) vq8 = 0;
+            if (vq8 < DSP_WIN_VOL_Q8_MIN) vq8 = DSP_WIN_VOL_Q8_MIN;
+            if (vq8 > DSP_WIN_VOL_Q8_MAX) vq8 = DSP_WIN_VOL_Q8_MAX;
             if (is_mic) {
                 rx_usb_set_vol_q8(&mic, ch, vq8);
             } else {
@@ -635,7 +652,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, 
                      (parser.locked ? 16u : 0u) |
                      (mixer.test_tone_enabled ? 32u : 0u) |
                      (flash_loaded ? 64u : 0u));
-    b[7] = (uint8_t)mode;
+    b[7] = mixer.test_tone_enabled ? 1u : 0u;
     uint32_t v[13] = {0};
     bool need_eq_crc = false;
     if (hid_page == 0u) {
@@ -669,12 +686,12 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, 
             (uint32_t)mixer.params.win_vol_db_x100[0],
             (uint32_t)mixer.params.win_vol_db_x100[1],
             (uint32_t)mixer.params.win_vol_db_x100[2],
-            mixer.params.win_mute_mask,
+            (uint32_t)mixer.params.win_mute_mask | ((uint32_t)(mixer.params.user_mute_mask & DSP_MUTE_ALL_MASK) << 8),
             mixer.params.rx_pin_mode,
             flash_loaded ? 1u : 0u,
             flash_saves,
             source_drops,
-            source_state
+            parser.locked ? source_state : 0u
         };
         memcpy(v, p, sizeof(v));
     } else if (hid_page >= 4u && hid_page <= 8u) {
@@ -715,8 +732,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, cons
     if (b[0] == 0x10u && b[1] <= 8u) {
         hid_page = b[1];
     } else if (b[0] == 0x20u && b[1] <= 1u) {
-        mode = b[1];
-        dsp_mixer_set_test_tone(&mixer, mode == 1u);
+        dsp_mixer_set_test_tone(&mixer, b[1] == 1u);
     } else if (b[0] == 0x40u && len >= 9u) {
         dsp_params_t np = mixer.params;
         np.eq_enabled = (b[1] != 0u);
@@ -724,19 +740,22 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, cons
         int32_t mast = get_i16le(b + 4);
         int32_t pc = get_i16le(b + 6);
         uint8_t pm = b[8];
-        if (g < -6000) g = -6000;
-        if (g > 1200) g = 1200;
-        if (mast < -6000) mast = -6000;
-        if (mast > 600) mast = 600;
-        if (pc < -2400) pc = -2400;
-        if (pc > 1200) pc = 1200;
-        if (pm != 0u && pm != 1u && pm != 13u) pm = np.rx_pin_mode;
+        if (g < DSP_GAME_DB_MIN_X100) g = DSP_GAME_DB_MIN_X100;
+        if (g > DSP_GAME_DB_MAX_X100) g = DSP_GAME_DB_MAX_X100;
+        if (mast < DSP_MASTER_DB_MIN_X100) mast = DSP_MASTER_DB_MIN_X100;
+        if (mast > DSP_MASTER_DB_MAX_X100) mast = DSP_MASTER_DB_MAX_X100;
+        if (pc < DSP_PC_TRIM_DB_MIN_X100) pc = DSP_PC_TRIM_DB_MIN_X100;
+        if (pc > DSP_PC_TRIM_DB_MAX_X100) pc = DSP_PC_TRIM_DB_MAX_X100;
+        if (!dsp_rx_pin_mode_valid(pm)) pm = np.rx_pin_mode;
         np.game_db_x100 = g;
         np.master_db_x100 = mast;
         np.pc_trim_db_x100 = pc;
         np.rx_pin_mode = pm;
+        if (len >= 10u && (b[9] & 0x80u) != 0u) {
+            np.user_mute_mask = (uint8_t)(b[9] & DSP_MUTE_ALL_MASK);
+        }
         dsp_mixer_set_params(&mixer, &np);
-        if ((pm == 1u || pm == 13u) && pm != active_rx_pin) {
+        if ((pm == DSP_RX_PIN_MODE_GP1 || pm == DSP_RX_PIN_MODE_GP13) && pm != active_rx_pin) {
             apply_uart_rx_pin(pm);
         }
     } else if (b[0] == 0x41u && b[1] == 0xa5u) {
@@ -745,7 +764,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, cons
         staged_eq_preamp = mixer.eq.preamp_linear;
         restore_interrupts(irq);
         staged_eq_band_mask = 0;
-        eq_staging_active = true;
+        eq_stage_state = EQ_STAGE_COLLECTING;
     } else if (b[0] == 0x42u && len >= 22u && b[1] < DSP_EQ_BANDS) {
         dsp_biquad_coeff_t c = {
             .b0 = get_f32le(b + 2),
@@ -754,34 +773,36 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, cons
             .a1 = get_f32le(b + 14),
             .a2 = get_f32le(b + 18)
         };
-        if (dsp_biquad_stable(&c)) {
-            if (eq_staging_active) {
+        if (eq_stage_state == EQ_STAGE_COLLECTING) {
+            if (dsp_biquad_stable(&c)) {
                 staged_eq_coeffs[b[1]] = c;
                 staged_eq_band_mask |= (uint16_t)(1u << b[1]);
             } else {
-                dsp_eq_set_band(&mixer.eq, b[1], &c);
+                eq_stage_state = EQ_STAGE_ABORTED;
+                staged_eq_band_mask = 0;
             }
-        } else if (eq_staging_active) {
-            eq_staging_active = false;
-            staged_eq_band_mask = 0;
+        } else if (eq_stage_state == EQ_STAGE_IDLE && dsp_biquad_stable(&c)) {
+            dsp_eq_set_band(&mixer.eq, b[1], &c);
         }
     } else if (b[0] == 0x43u && len >= 5u) {
         float pre = get_f32le(b + 1);
-        if (dsp_float_sane(pre) && pre >= 0.01f && pre <= 4.0f) {
-            if (eq_staging_active) {
+        bool pre_ok = dsp_float_sane(pre) && pre >= DSP_EQ_PREAMP_MIN_LINEAR && pre <= DSP_EQ_PREAMP_MAX_LINEAR;
+        if (eq_stage_state == EQ_STAGE_COLLECTING) {
+            if (pre_ok) {
                 staged_eq_preamp = pre;
             } else {
-                dsp_eq_set_preamp(&mixer.eq, pre);
+                eq_stage_state = EQ_STAGE_ABORTED;
+                staged_eq_band_mask = 0;
             }
-        } else if (eq_staging_active) {
-            eq_staging_active = false;
-            staged_eq_band_mask = 0;
+        } else if (eq_stage_state == EQ_STAGE_IDLE && pre_ok) {
+            dsp_eq_set_preamp(&mixer.eq, pre);
         }
     } else if (b[0] == 0x44u && b[1] == 0xa5u) {
-        if (eq_staging_active && staged_eq_band_mask == ((uint16_t)((1u << DSP_EQ_BANDS) - 1u))) {
+        if (eq_stage_state == EQ_STAGE_COLLECTING &&
+            staged_eq_band_mask == ((uint16_t)((1u << DSP_EQ_BANDS) - 1u))) {
             dsp_eq_commit_profile(&mixer.eq, staged_eq_preamp, staged_eq_coeffs);
         }
-        eq_staging_active = false;
+        eq_stage_state = EQ_STAGE_IDLE;
         staged_eq_band_mask = 0;
     } else if (b[0] == 0x50u && b[1] == 0xa5u) {
         save_requested = true;
@@ -804,7 +825,7 @@ int main(void) {
     rx_usb_init(&mic);
     rx_parser_reset(&parser);
     flash_loaded = flash_cfg_load(&mixer);
-    if (mixer.params.rx_pin_mode == 1u) active_rx_pin = UART_RX_PIN_ALT;
+    if (mixer.params.rx_pin_mode == DSP_RX_PIN_MODE_GP13) active_rx_pin = UART_RX_PIN_ALT;
     else active_rx_pin = UART_RX_PIN_PRIMARY;
 
     // Configure PIO0 SM0 for 48 kHz 32-bit 64fs Philips I2S
@@ -875,7 +896,7 @@ int main(void) {
 
         if (reset_requested) {
             reset_requested = false;
-            eq_staging_active = false;
+            eq_stage_state = EQ_STAGE_IDLE;
             staged_eq_band_mask = 0;
             uint32_t irq = save_and_disable_interrupts();
             int32_t wvol0 = mixer.params.win_vol_db_x100[0];
@@ -883,15 +904,16 @@ int main(void) {
             int32_t wvol2 = mixer.params.win_vol_db_x100[2];
             uint8_t wmute = mixer.params.win_mute_mask;
             dsp_eq_init_flat(&mixer.eq, false);
-            mixer.params.game_db_x100 = 0;
-            mixer.params.master_db_x100 = -4500;
-            mixer.params.pc_trim_db_x100 = 0;
+            mixer.params.game_db_x100 = DSP_GAME_DB_DEFAULT_X100;
+            mixer.params.master_db_x100 = DSP_MASTER_DB_DEFAULT_X100;
+            mixer.params.pc_trim_db_x100 = DSP_PC_TRIM_DB_DEFAULT_X100;
             mixer.params.win_vol_db_x100[0] = wvol0;
             mixer.params.win_vol_db_x100[1] = wvol1;
             mixer.params.win_vol_db_x100[2] = wvol2;
             mixer.params.win_mute_mask = wmute;
+            mixer.params.user_mute_mask = 0;
             mixer.params.eq_enabled = false;
-            mixer.params.rx_pin_mode = 13u;
+            mixer.params.rx_pin_mode = DSP_RX_PIN_MODE_DEFAULT;
             mixer.eq.reset_pending = true;
             restore_interrupts(irq);
             dsp_mixer_recompute_gains(&mixer);

@@ -36,8 +36,8 @@ typedef struct {
     uint32_t missing, duplicates, sequence_errors, sessions, source_errors, tail_missing;
     uint64_t session, expected;
     uint32_t expected_seq;
-    uint32_t high, low, small, normal, large, silence;
-    uint32_t prime_ticks, partial_packets, first_index_low, first_seq;
+    uint32_t high, low, small, normal, large;
+    uint32_t prime_ticks, partial_packets;
     bool have, primed, active, ended;
     int16_t vol_q8[3];   // [0]=master, [1]=L, [2]=R in 1/256 dB, [-15360..0] (-60..0 dB)
     uint8_t mute_mask;   // bit0=master, bit1=L, bit2=R

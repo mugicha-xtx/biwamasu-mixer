@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 mugicha_xtx
 #include <string.h>
-#include <limits.h>
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
 #include "pico/rand.h"
@@ -12,6 +11,7 @@
 #include "device/dcd.h"
 #include "bridge_core.h"
 
+extern const tusb_desc_device_t probe_device_descriptor;
 static bridge_queue_t queue;
 typedef struct {
  uint64_t session,index,last_rx;
@@ -67,7 +67,8 @@ static void start_ready(void) {
 static void status_packet(bool end) {
  state_t x=snapshot(); bridge_pcm_t p={.session=x.session,.index=x.index,.seq=x.seq,.us=time_us_32(),.size=64};
  uint64_t age=x.last_rx?time_us_64()-x.last_rx:UINT64_MAX;
- uint32_t v[16]={48000,2,16,baud,x.state,bridge_count(&queue),x.high,x.qdrop,x.stale,x.shorts,x.zlp,x.bad,x.dma_errors,x.gaps,age>UINT32_MAX?UINT32_MAX:(uint32_t)age,3};
+ uint32_t state_and_ver=((uint32_t)x.state)|((uint32_t)probe_device_descriptor.bcdDevice<<16);
+ uint32_t v[16]={48000,2,16,baud,state_and_ver,bridge_count(&queue),x.high,x.qdrop,x.stale,x.shorts,x.zlp,x.bad,x.dma_errors,x.gaps,age>UINT32_MAX?UINT32_MAX:(uint32_t)age,3};
  for(unsigned i=0;i<16;i++) bridge_put32(p.pcm+i*4,v[i]);
  int b=active==0?1:0;
  wire_size[b]=bridge_encode(wire[b],&p,2,(x.enabled?1:0)|(x.flags&6)|(end?8:0),x.qdrop+x.stale,x.bad);
@@ -108,7 +109,7 @@ static void pump(void) {
 bool tud_audio_rx_done_isr(uint8_t port,uint16_t n,uint8_t func,uint8_t ep,uint8_t alt) {
  (void)port;(void)func;(void)ep;(void)alt;
  uint32_t start=time_us_32(); bridge_pcm_t p;
- if(n>192 || n%4 || tud_audio_available()!=n) goto bad;
+ if(n>BRIDGE_PCM || n%4 || tud_audio_available()!=n) goto bad;
  if(tud_audio_read(p.pcm,n)!=n || tud_audio_available()!=0) goto bad;
  if(!n) { s.zlp++; goto done; }
  if(!s.enabled) { s.boundary_drop+=n/4; goto done; }
@@ -117,7 +118,7 @@ bool tud_audio_rx_done_isr(uint8_t port,uint16_t n,uint8_t func,uint8_t ep,uint8
  // A timing gap alone does not change the PCM format/position. Keep the
  // epoch and accept this first packet; alt/reset/error still create epochs.
  p.session=s.session; p.index=s.index; p.seq=s.seq++; p.us=start; p.size=n;
- s.index+=n/4; s.last_rx=now; s.state=3; if(n<192) s.shorts++;
+ s.index+=n/4; s.last_rx=now; s.state=3; if(n<BRIDGE_PCM) s.shorts++;
  if(!bridge_push(&queue,&p)) s.qdrop+=n/4;
  unsigned count=bridge_count(&queue); if(count>s.high) s.high=count;
  goto done;

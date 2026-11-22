@@ -2,6 +2,7 @@
 # Copyright (c) 2026 mugicha_xtx
 param(
     [ValidatePattern('^$|^(0x)?[0-9a-fA-F]{1,4}u?$')][string]$UsbVid = '',
+    [ValidatePattern('^$|^(0x)?[0-9a-fA-F]{1,4}u?$')][string]$BridgePid = '',
     [ValidatePattern('^$|^(0x)?[0-9a-fA-F]{1,4}u?$')][string]$MixerPid = '',
     [switch]$DevTestIds,
     [string]$OutPath = '',
@@ -22,23 +23,29 @@ if (!(Test-Path -LiteralPath $guiSrc)) {
 
 $usbIdsPath = Join-Path $root 'include/usb_ids.h'
 $headerVid = 0
+$headerBridgePid = 0
 $headerMixerPid = 0
 if (Test-Path -LiteralPath $usbIdsPath) {
     $usbIdsText = Get-Content -Raw -Encoding UTF8 -LiteralPath $usbIdsPath
     if ($usbIdsText -match '#define\s+USB_VID\s+(0x[0-9a-fA-F]+u?)') { $headerVid = Parse-HexId $matches[1] }
+    if ($usbIdsText -match '#define\s+BRIDGE_USB_PID\s+(0x[0-9a-fA-F]+u?)') { $headerBridgePid = Parse-HexId $matches[1] }
     if ($usbIdsText -match '#define\s+MIXER_USB_PID\s+(0x[0-9a-fA-F]+u?)') { $headerMixerPid = Parse-HexId $matches[1] }
 }
 
 $effVid = $headerVid
+$effBridgePid = $headerBridgePid
 $effMixerPid = $headerMixerPid
 if ($DevTestIds) {
     $effVid = 0xcafe
+    $effBridgePid = 0x401d
     $effMixerPid = 0x4026
 }
 if ($UsbVid) { $effVid = Parse-HexId $UsbVid }
+if ($BridgePid) { $effBridgePid = Parse-HexId $BridgePid }
 if ($MixerPid) { $effMixerPid = Parse-HexId $MixerPid }
 if ($CheckOnly -and ($effVid -eq 0 -or $effMixerPid -eq 0)) {
     $effVid = 0xcafe
+    if ($effBridgePid -eq 0) { $effBridgePid = 0x401d }
     $effMixerPid = 0x4026
 }
 
@@ -80,6 +87,7 @@ try {
 namespace BiwamasuMixerGui {
     internal static class BuildConfig {
         public const ushort DefaultVid = 0x$('{0:x4}' -f $effVid);
+        public const ushort DefaultBridgePid = 0x$('{0:x4}' -f $effBridgePid);
         public const ushort DefaultMixerPid = 0x$('{0:x4}' -f $effMixerPid);
     }
 }
@@ -118,6 +126,7 @@ namespace BiwamasuMixerGui {
             CheckOnlyPassed = $true
             Compiler = $csc
             DefaultVid = ('0x{0:x4}' -f $effVid)
+            DefaultBridgePid = ('0x{0:x4}' -f $effBridgePid)
             DefaultMixerPid = ('0x{0:x4}' -f $effMixerPid)
             IconBytes = (Get-Item -LiteralPath $tempIco).Length
             SizeBytes = (Get-Item -LiteralPath $targetExe).Length

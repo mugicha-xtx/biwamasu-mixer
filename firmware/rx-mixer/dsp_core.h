@@ -15,8 +15,37 @@ enum {
     DSP_PC_PRIME = 144,
     DSP_PC_TARGET = 144,
     DSP_PC_HARD_HIGH = 576,
-    DSP_I2S_BLOCK_FRAMES = 32
+    DSP_I2S_BLOCK_FRAMES = 32,
+
+    DSP_GAME_DB_MIN_X100 = -6000,
+    DSP_GAME_DB_MAX_X100 = 2400,
+    DSP_GAME_DB_DEFAULT_X100 = 0,
+    DSP_MASTER_DB_MIN_X100 = -8000,
+    DSP_MASTER_DB_MAX_X100 = 600,
+    DSP_MASTER_DB_DEFAULT_X100 = -4500,
+    DSP_PC_TRIM_DB_MIN_X100 = -2400,
+    DSP_PC_TRIM_DB_MAX_X100 = 2400,
+    DSP_PC_TRIM_DB_DEFAULT_X100 = 0,
+    DSP_WIN_VOL_Q8_MIN = -15360,
+    DSP_WIN_VOL_Q8_MAX = 0,
+    DSP_MUTE_MASTER = 1,
+    DSP_MUTE_GAME = 2,
+    DSP_MUTE_PC = 4,
+    DSP_MUTE_ALL_MASK = 7,
+    DSP_RX_PIN_MODE_AUTO = 0,
+    DSP_RX_PIN_MODE_GP1 = 1,
+    DSP_RX_PIN_MODE_GP13 = 13,
+    DSP_RX_PIN_MODE_DEFAULT = DSP_RX_PIN_MODE_GP1
 };
+
+#define DSP_EQ_PREAMP_MIN_LINEAR 0.01f
+#define DSP_EQ_PREAMP_MAX_LINEAR 4.0f
+
+static inline bool dsp_rx_pin_mode_valid(uint8_t mode) {
+    return mode == DSP_RX_PIN_MODE_AUTO ||
+           mode == DSP_RX_PIN_MODE_GP1 ||
+           mode == DSP_RX_PIN_MODE_GP13;
+}
 
 typedef struct {
     float b0, b1, b2, a1, a2;
@@ -43,6 +72,7 @@ typedef struct {
     int32_t pc_trim_db_x100;
     int32_t win_vol_db_x100[3]; // [0]=master, [1]=L, [2]=R in centi-dB
     uint8_t win_mute_mask;      // bit0=master, bit1=L, bit2=R
+    uint8_t user_mute_mask;     // temporary (not persisted to Flash): bit0=master, bit1=Switch2, bit2=PC
     bool eq_enabled;
     uint8_t rx_pin_mode;        // 0=auto, 1=GP1, 13=GP13
 } dsp_params_t;

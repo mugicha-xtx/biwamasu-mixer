@@ -55,6 +55,15 @@ public static class AudioPackHid {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern SafeFileHandle CreateFile(string p, uint a, uint share, IntPtr sec, uint mode, uint flags, IntPtr t);
     [DllImport("hid.dll", SetLastError = true)] static extern bool HidD_SetFeature(SafeFileHandle h, byte[] b, int n);
     [DllImport("hid.dll", SetLastError = true)] static extern bool HidD_GetFeature(SafeFileHandle h, byte[] b, int n);
+    [DllImport("hid.dll", SetLastError = true)] static extern bool HidD_GetAttributes(SafeFileHandle h, ref ATTRS a);
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct ATTRS {
+        public int size;
+        public ushort vid;
+        public ushort pid;
+        public ushort ver;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     struct IFACE {
@@ -145,6 +154,14 @@ public static class AudioPackHid {
                 System.Threading.Thread.Sleep(5);
             }
             throw new IOException("HID page mismatch");
+        }
+    }
+
+    public static ushort ReadFirmwareBcd(string vidHex, string pidHex) {
+        using (SafeFileHandle chosen = OpenDevice(vidHex, pidHex)) {
+            ATTRS a = new ATTRS();
+            a.size = Marshal.SizeOf(typeof(ATTRS));
+            return HidD_GetAttributes(chosen, ref a) ? a.ver : (ushort)0;
         }
     }
 }
@@ -391,6 +408,16 @@ function To-Signed32([uint32]$u) {
     return [BitConverter]::ToInt32([BitConverter]::GetBytes($u), 0)
 }
 
+function Format-UsbBcdVersion([uint16]$bcd) {
+    if ($bcd -eq 0) { return $null }
+    $majHi = ($bcd -shr 12) -band 0xF
+    $majLo = ($bcd -shr 8) -band 0xF
+    $min = ($bcd -shr 4) -band 0xF
+    $pat = $bcd -band 0xF
+    $maj = if ($majHi -gt 9 -or $majLo -gt 9 -or $min -gt 9 -or $pat -gt 9) { ($bcd -shr 8) -band 0xFF } else { $majHi * 10 + $majLo }
+    return "v$maj.$min.$pat"
+}
+
 if ($CheckOnly) {
     $samplePeace = Join-Path $root 'presets/sample-peace.txt'
     $parsed = if (Test-Path -LiteralPath $samplePeace) { Parse-PeaceFilters -Path $samplePeace } else { $null }
@@ -418,7 +445,7 @@ if ($Bootsel) {
 
 if ($ResetDefaults) {
     [void][AudioPackHid]::Exchange($vidHex, $pidHex, [byte[]]@(0x51, 0xa5), $false)
-    Start-Sleep -Milliseconds 30
+    Start-Sleep -Milliseconds 40
 }
 
 if ($TestTone -ne '') {
@@ -458,9 +485,9 @@ if ($needParamWrite) {
     $cw = Words-FromPage $curRaw
 
     $eqByte = if ($Eq -eq 'On') { [byte]1 } elseif ($Eq -eq 'Off') { [byte]0 } else { [byte]($cw[0] -band 1) }
-    $gameX100 = if ($null -ne $GameDb) { Clamp-Int32 ($GameDb * 100.0) -6000 1200 } else { To-Signed32 $cw[1] }
-    $masterX100 = if ($null -ne $MasterDb) { Clamp-Int32 ($MasterDb * 100.0) -6000 600 } else { To-Signed32 $cw[2] }
-    $pcX100 = if ($null -ne $PcTrimDb) { Clamp-Int32 ($PcTrimDb * 100.0) -2400 1200 } else { To-Signed32 $cw[3] }
+    $gameX100 = if ($null -ne $GameDb) { Clamp-Int32 ($GameDb * 100.0) -6000 2400 } else { To-Signed32 $cw[1] }
+    $masterX100 = if ($null -ne $MasterDb) { Clamp-Int32 ($MasterDb * 100.0) -8000 600 } else { To-Signed32 $cw[2] }
+    $pcX100 = if ($null -ne $PcTrimDb) { Clamp-Int32 ($PcTrimDb * 100.0) -2400 2400 } else { To-Signed32 $cw[3] }
     $pinByte = if ($UartRxPin -eq 'Auto') { [byte]0 } elseif ($UartRxPin -eq '1') { [byte]1 } elseif ($UartRxPin -eq '13') { [byte]13 } else { [byte]$cw[8] }
 
     $cmd = New-Object byte[] 9
@@ -481,11 +508,28 @@ if ($Save) {
     Start-Sleep -Milliseconds 160
 }
 
-# Read back all 4 pages for status display
+# Read back all 4 pages for status display (poll page 3 up to ~520 ms total when verifying Flash save)
+$r3 = $null
+$w3 = $null
+if ($Save) {
+    for ($attempt = 0; $attempt -lt 7; $attempt++) {
+        try {
+            $r3 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 3)
+            $w3 = Words-FromPage $r3
+            if ($w3[10] -gt $beforeSaves) { break }
+        } catch {
+            if ($attempt -eq 6) { throw }
+        }
+        if ($attempt -lt 6) { Start-Sleep -Milliseconds 60 }
+    }
+}
 $r0 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 0); $w0 = Words-FromPage $r0
 $r1 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 1); $w1 = Words-FromPage $r1
 $r2 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 2); $w2 = Words-FromPage $r2
-$r3 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 3); $w3 = Words-FromPage $r3
+if ($null -eq $r3) {
+    $r3 = [AudioPackHid]::ReadPage($vidHex, $pidHex, 3)
+    $w3 = Words-FromPage $r3
+}
 
 if ($Save -and $w3[10] -le $beforeSaves) {
     throw "Flash save verification failed (FlashSaves remained $($w3[10]))."
@@ -496,12 +540,17 @@ if ($PeaceFile -ne '' -and $w3[0] -eq 0) {
 }
 
 $flags = $r0[7]
+$uartLocked = (($flags -band 16) -ne 0)
+$rxFwBcd = [AudioPackHid]::ReadFirmwareBcd($vidHex, $pidHex)
+$txFwBcd = if ($uartLocked) { [uint16](($w3[12] -shr 16) -band 0xFFFF) } else { [uint16]0 }
 [ordered]@{
+    RxFirmwareVersion = Format-UsbBcdVersion $rxFwBcd
+    TxFirmwareVersion = if ($txFwBcd -ne 0) { Format-UsbBcdVersion $txFwBcd } else { 'Unreceived' }
     ObsMicActive = (($flags -band 1) -ne 0)
     PcSpeakerActive = (($flags -band 2) -ne 0)
     SwitchI2sActive = (($flags -band 4) -ne 0)
     PcI2sActive = (($flags -band 8) -ne 0)
-    UartLocked = (($flags -band 16) -ne 0)
+    UartLocked = $uartLocked
     TestToneOn = (($flags -band 32) -ne 0)
     FlashConfigLoaded = (($flags -band 64) -ne 0)
     ActiveUartRxPin = "GP$($r0[61])"
@@ -513,6 +562,9 @@ $flags = $r0[7]
     PcTrimDb = [Math]::Round((To-Signed32 $w3[3]) / 100.0, 2)
     WindowsMasterVolDb = [Math]::Round((To-Signed32 $w3[4]) / 100.0, 2)
     WindowsMuted = ((($w3[7] -band 1) -ne 0) -or (($w3[7] -band 6) -eq 6))
+    MasterMuted = ((($w3[7] -shr 8) -band 1) -ne 0)
+    GameMuted = ((($w3[7] -shr 8) -band 2) -ne 0)
+    PcMuted = ((($w3[7] -shr 8) -band 4) -ne 0)
     FlashSaves = $w3[10]
     SelfTestFailureLine = $w0[0]
     Baud = $w0[1]

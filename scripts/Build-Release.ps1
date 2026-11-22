@@ -194,9 +194,10 @@ try {
 
     Write-Host 'Building Biwamasu-Mixer Setting tool.exe Windows GUI...'
     $guiArgs = @{
-        UsbVid   = ('0x{0:x4}' -f $effVid)
-        MixerPid = ('0x{0:x4}' -f $effMixerPid)
-        OutPath  = $guiExe
+        UsbVid    = ('0x{0:x4}' -f $effVid)
+        BridgePid = ('0x{0:x4}' -f $effBridgePid)
+        MixerPid  = ('0x{0:x4}' -f $effMixerPid)
+        OutPath   = $guiExe
     }
     if ($DevTestIds) { $guiArgs['DevTestIds'] = $true }
     & (Join-Path $root 'scripts/Build-Gui.ps1') @guiArgs
@@ -214,7 +215,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $root 'scripts/Control-BiwamasuMixer.ps1') -Destination (Join-Path $bundleDir 'scripts') -Force
     Copy-Item -LiteralPath (Join-Path $root 'presets/sample-peace.txt') -Destination (Join-Path $bundleDir 'presets') -Force
     Copy-Item -LiteralPath (Join-Path $root 'docs/USB_PID_APPLICATION.md') -Destination (Join-Path $bundleDir 'docs') -Force
-    Get-ChildItem -LiteralPath (Join-Path $root 'images') -Filter '*.jpg' -File |
+    Get-ChildItem -LiteralPath (Join-Path $root 'images') -File |
+        Where-Object { $_.Extension -in @('.jpg', '.png') } |
         Copy-Item -Destination (Join-Path $bundleDir 'images') -Force
     Copy-Item -LiteralPath (Join-Path $root 'hardware/schematic.svg'), (Join-Path $root 'hardware/README.md') -Destination (Join-Path $bundleDir 'hardware') -Force
     Get-ChildItem -LiteralPath (Join-Path $root 'licenses') -File |

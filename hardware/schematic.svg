@@ -1,139 +1,138 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 mugicha_xtx -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 620" width="1120" height="620" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-  <rect width="1120" height="620" fill="#f8fafc"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 660" width="1160" height="660" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <rect width="1160" height="660" fill="#f8fafc"/>
 
   <!-- Title Banner -->
-  <text x="560" y="36" text-anchor="middle" font-size="20" font-weight="bold" fill="#0f172a">
+  <text x="580" y="34" text-anchor="middle" font-size="20" font-weight="bold" fill="#0f172a">
     Biwamasu Mixer — Hardware Interconnect Schematic (MIT License)
   </text>
-  <text x="560" y="58" text-anchor="middle" font-size="13" fill="#475569">
-    Dual Raspberry Pi Pico 2 H (RP2350) + 33-ohm Isolated 3 Mbps UART Link + Pimoroni Pico Audio Pack (PCM5100A / PAM8908)
+  <text x="580" y="56" text-anchor="middle" font-size="12.5" fill="#475569">
+    Dual Raspberry Pi Pico 2 H (RP2350) + Pimoroni Pico Omnibus + 2-Wire Direct 3 Mbps UART (GP0&#8594;GP1) + Pico Audio Pack
   </text>
 
   <!-- CONSOLE HOST -->
-  <rect x="28" y="120" width="130" height="96" rx="10" fill="#e2e8f0" stroke="#475569" stroke-width="2"/>
-  <text x="93" y="156" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Console Host</text>
-  <text x="93" y="176" text-anchor="middle" font-size="11" fill="#334155">USB Audio 1.0</text>
-  <text x="93" y="194" text-anchor="middle" font-size="11" fill="#334155">48kHz / 16bit 2ch</text>
-  <line x1="158" y1="168" x2="215" y2="168" stroke="#0284c7" stroke-width="4"/>
-  <text x="186" y="158" text-anchor="middle" font-size="10" font-weight="bold" fill="#0284c7">USB</text>
+  <rect x="24" y="106" width="136" height="96" rx="10" fill="#e2e8f0" stroke="#475569" stroke-width="2"/>
+  <text x="92" y="138" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Switch 2 Dock</text>
+  <text x="92" y="158" text-anchor="middle" font-size="11" fill="#334155">USB Audio 1.0</text>
+  <text x="92" y="176" text-anchor="middle" font-size="11" fill="#334155">48kHz / 16bit 2ch</text>
+  <text x="92" y="192" text-anchor="middle" font-size="10" fill="#64748b">(USB-A Port)</text>
 
-  <!-- U1: Pico 1 TX Bridge -->
-  <rect x="215" y="96" width="235" height="230" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="2.5"/>
-  <rect x="215" y="146" width="18" height="44" rx="2" fill="#94a3b8" stroke="#334155" stroke-width="1.5"/>
-  <text x="332" y="124" text-anchor="middle" font-size="14" font-weight="bold" fill="#14532d">U1: Pico 2 H (TX Bridge)</text>
-  <text x="332" y="142" text-anchor="middle" font-size="11" fill="#166534">firmware/tx-bridge (RP2350)</text>
-  <text x="332" y="160" text-anchor="middle" font-size="11" fill="#166534">USB Powered from Console</text>
+  <!-- Optional ADuM3160 USB Isolator -->
+  <line x1="160" y1="154" x2="188" y2="154" stroke="#0284c7" stroke-width="3.5"/>
+  <rect x="188" y="112" width="132" height="84" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="254" y="136" text-anchor="middle" font-size="11" font-weight="bold" fill="#9a3412">USB Isolator</text>
+  <text x="254" y="153" text-anchor="middle" font-size="10.5" fill="#c2410c">(ADuM3160 / 12Mbps)</text>
+  <text x="254" y="170" text-anchor="middle" font-size="10" fill="#7c2d12">Recommended Option</text>
+  <text x="254" y="185" text-anchor="middle" font-size="9.5" fill="#9a3412">Breaks GND Loop</text>
+  <line x1="320" y1="154" x2="362" y2="154" stroke="#0284c7" stroke-width="3.5"/>
+  <text x="341" y="144" text-anchor="middle" font-size="10" font-weight="bold" fill="#0284c7">USB</text>
+
+  <!-- U1: Pico 1 TX Bridge (Standalone outside Omnibus) -->
+  <rect x="362" y="88" width="218" height="266" rx="10" fill="#dcfce7" stroke="#15803d" stroke-width="2.5"/>
+  <rect x="362" y="132" width="16" height="44" rx="2" fill="#94a3b8" stroke="#334155" stroke-width="1.5"/>
+  <text x="472" y="114" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#14532d">U1: Pico 2 H (TX)</text>
+  <text x="472" y="132" text-anchor="middle" font-size="10.5" fill="#166534">firmware/tx-bridge (RP2350)</text>
+  <text x="472" y="148" text-anchor="middle" font-size="10.5" fill="#166534">Standalone (NOT on Omnibus!)</text>
 
   <!-- U1 Pins (Right side) -->
-  <rect x="352" y="182" width="98" height="24" rx="4" fill="#ffffff" stroke="#15803d"/>
-  <text x="401" y="198" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 1: GP0 (TX)</text>
+  <rect x="466" y="176" width="114" height="24" rx="4" fill="#ffffff" stroke="#15803d"/>
+  <text x="523" y="192" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 1: GP0 (TX)</text>
 
-  <rect x="352" y="222" width="98" height="24" rx="4" fill="#ffffff" stroke="#15803d"/>
-  <text x="401" y="238" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 3: GND</text>
+  <rect x="466" y="216" width="114" height="24" rx="4" fill="#ffffff" stroke="#15803d"/>
+  <text x="523" y="232" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 3: GND</text>
 
-  <!-- U1 Power Isolation Tag -->
-  <rect x="232" y="266" width="202" height="44" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
-  <text x="333" y="284" text-anchor="middle" font-size="11" font-weight="bold" fill="#991b1b">ISOLATED POWER RAILS</text>
-  <text x="333" y="300" text-anchor="middle" font-size="10" fill="#b91c1c">Do NOT connect Pin 40 VBUS / VSYS / 3V3</text>
+  <!-- U1 Power Isolation Warning -->
+  <rect x="376" y="266" width="190" height="72" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="1.8"/>
+  <text x="471" y="285" text-anchor="middle" font-size="11" font-weight="bold" fill="#991b1b">ISOLATED POWER RAILS</text>
+  <text x="471" y="302" text-anchor="middle" font-size="10" fill="#b91c1c">NEVER plug U1 directly into</text>
+  <text x="471" y="316" text-anchor="middle" font-size="10" fill="#b91c1c">Pico Omnibus! Do NOT wire</text>
+  <text x="471" y="330" text-anchor="middle" font-size="10" font-weight="bold" fill="#b91c1c">VBUS (40) / VSYS (39) / 3V3</text>
 
-  <!-- R1 33-ohm UART Link -->
-  <line x1="450" y1="194" x2="492" y2="194" stroke="#d97706" stroke-width="3"/>
-  <rect x="492" y="180" width="66" height="28" rx="4" fill="#fef3c7" stroke="#b45309" stroke-width="2"/>
-  <text x="525" y="198" text-anchor="middle" font-size="12" font-weight="bold" fill="#78350f">R1 33&#937;</text>
-  <line x1="558" y1="194" x2="600" y2="194" stroke="#d97706" stroke-width="3"/>
-  <text x="525" y="170" text-anchor="middle" font-size="10" font-weight="bold" fill="#b45309">3 Mbps UART DMA</text>
-  <text x="525" y="219" text-anchor="middle" font-size="10" fill="#64748b">(1/4W series resistor)</text>
+  <!-- 2-Wire Short Female-to-Female Jumper Link (<= 10 cm) -->
+  <line x1="580" y1="188" x2="684" y2="188" stroke="#d97706" stroke-width="3.2"/>
+  <text x="632" y="174" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#b45309">3 Mbps UART</text>
+  <text x="632" y="203" text-anchor="middle" font-size="9.5" fill="#64748b">F-F Jumper (&lt;=10cm)</text>
 
-  <!-- Common GND Wire -->
-  <line x1="450" y1="234" x2="600" y2="234" stroke="#1e293b" stroke-width="3"/>
-  <text x="525" y="250" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e293b">Common GND</text>
+  <line x1="580" y1="228" x2="684" y2="228" stroke="#1e293b" stroke-width="3.2"/>
+  <text x="632" y="244" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#1e293b">Common GND</text>
 
   <!-- Power Isolation Divider -->
-  <line x1="525" y1="274" x2="525" y2="338" stroke="#dc2626" stroke-width="2" stroke-dasharray="6,4"/>
-  <text x="525" y="355" text-anchor="middle" font-size="10" font-weight="bold" fill="#dc2626">No Power Wire Here</text>
+  <line x1="632" y1="262" x2="632" y2="352" stroke="#dc2626" stroke-width="2" stroke-dasharray="6,4"/>
+  <text x="632" y="368" text-anchor="middle" font-size="10" font-weight="bold" fill="#dc2626">2 Wires Only</text>
+  <text x="632" y="382" text-anchor="middle" font-size="9.5" fill="#dc2626">(No Power Wire)</text>
 
-  <!-- U2: Pico 2 RX Mixer -->
-  <rect x="600" y="96" width="245" height="368" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
-  <rect x="827" y="146" width="18" height="44" rx="2" fill="#94a3b8" stroke="#334155" stroke-width="1.5"/>
-  <text x="722" y="124" text-anchor="middle" font-size="14" font-weight="bold" fill="#1e3a8a">U2: Pico 2 H (RX Mixer)</text>
-  <text x="722" y="142" text-anchor="middle" font-size="11" fill="#1e40af">firmware/rx-mixer (RP2350)</text>
-  <text x="722" y="160" text-anchor="middle" font-size="11" fill="#1e40af">USB Powered from PC Host</text>
+  <!-- PIMORONI PICO OMNIBUS CONTAINER -->
+  <rect x="684" y="76" width="452" height="428" rx="12" fill="#f1f5f9" stroke="#334155" stroke-width="2.5"/>
+  <text x="910" y="100" text-anchor="middle" font-size="14" font-weight="bold" fill="#0f172a">Pimoroni Pico Omnibus (Dual Expander)</text>
+  <text x="910" y="117" text-anchor="middle" font-size="10.5" fill="#475569">All 40 pins wired 1:1 in parallel across Center + Deck 1 + Deck 2 (Align "USB" silkscreen!)</text>
 
-  <!-- U2 Left RX Pins -->
-  <rect x="600" y="182" width="114" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="657" y="198" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 17: GP13 (RX)</text>
+  <!-- Deck 1 (Left Empty Male Slot: Only Pin 2 & Pin 3 used) -->
+  <rect x="700" y="132" width="128" height="202" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.8"/>
+  <text x="764" y="152" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#334155">Deck 1 (Empty)</text>
+  <text x="764" y="167" text-anchor="middle" font-size="9.5" fill="#64748b">UART Tap Only</text>
 
-  <rect x="600" y="222" width="114" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="657" y="238" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 18: GND</text>
+  <rect x="706" y="176" width="116" height="24" rx="4" fill="#fef3c7" stroke="#b45309"/>
+  <text x="764" y="192" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 2: GP1 (RX)</text>
 
-  <!-- U2 Right / Bottom Output Pins to Audio Pack (6 wires) -->
-  <rect x="698" y="266" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="282" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 39: VSYS (5V)</text>
+  <rect x="706" y="216" width="116" height="24" rx="4" fill="#e2e8f0" stroke="#334155"/>
+  <text x="764" y="232" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 3: GND</text>
 
-  <rect x="698" y="296" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="312" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 38: GND</text>
+  <text x="764" y="274" text-anchor="middle" font-size="9.5" fill="#b91c1c" font-weight="bold">Leave other 38 pins</text>
+  <text x="764" y="288" text-anchor="middle" font-size="9.5" fill="#b91c1c" font-weight="bold">UNCONNECTED</text>
+  <text x="764" y="314" text-anchor="middle" font-size="9.5" fill="#64748b">(Keep inside PP case)</text>
 
-  <rect x="698" y="326" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="342" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 29: GP22 (MUTE)</text>
+  <!-- Internal Omnibus Bus Lines Deck 1 <-> Center -->
+  <line x1="828" y1="188" x2="852" y2="188" stroke="#64748b" stroke-width="2.5" stroke-dasharray="3,2"/>
+  <line x1="828" y1="228" x2="852" y2="228" stroke="#64748b" stroke-width="2.5" stroke-dasharray="3,2"/>
 
-  <rect x="698" y="356" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="372" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 12: GP9 (DATA)</text>
+  <!-- Center Socket: U2 Pico 2 H (RX Mixer) -->
+  <rect x="852" y="132" width="134" height="202" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.2"/>
+  <rect x="900" y="320" width="38" height="14" rx="2" fill="#94a3b8" stroke="#334155" stroke-width="1.5"/>
+  <text x="919" y="152" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1e3a8a">Center Socket</text>
+  <text x="919" y="170" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1e40af">U2: Pico 2 H</text>
+  <text x="919" y="186" text-anchor="middle" font-size="10" fill="#1e40af">(RX Mixer)</text>
+  <text x="919" y="206" text-anchor="middle" font-size="9.5" fill="#334155">firmware/rx-mixer</text>
+  <text x="919" y="224" text-anchor="middle" font-size="9.5" fill="#334155">UART0 RX: GP1</text>
+  <text x="919" y="240" text-anchor="middle" font-size="9.5" fill="#334155">I2S: GP9/10/11</text>
+  <text x="919" y="256" text-anchor="middle" font-size="9.5" fill="#334155">MUTE: GP22</text>
+  <text x="919" y="280" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#1e3a8a">USB Powered</text>
+  <text x="919" y="294" text-anchor="middle" font-size="9.5" fill="#1e3a8a">from PC Host</text>
 
-  <rect x="698" y="386" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="402" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 14: GP10 (BCK)</text>
+  <!-- Internal Omnibus Bus Lines Center <-> Deck 2 -->
+  <line x1="986" y1="188" x2="1010" y2="188" stroke="#0d9488" stroke-width="2.5" stroke-dasharray="3,2"/>
+  <line x1="986" y1="228" x2="1010" y2="228" stroke="#0d9488" stroke-width="2.5" stroke-dasharray="3,2"/>
+  <line x1="986" y1="268" x2="1010" y2="268" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="3,2"/>
 
-  <rect x="698" y="416" width="147" height="24" rx="4" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="771" y="432" text-anchor="middle" font-size="11" font-weight="bold" fill="#0f172a">Pin 15: GP11 (LRCK)</text>
+  <!-- Deck 2: U3 Pimoroni Pico Audio Pack -->
+  <rect x="1010" y="132" width="114" height="202" rx="8" fill="#fae8ff" stroke="#86198f" stroke-width="2.2"/>
+  <text x="1067" y="152" text-anchor="middle" font-size="11" font-weight="bold" fill="#701a75">Deck 2 (Plug-in)</text>
+  <text x="1067" y="170" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#86198f">U3: Pico</text>
+  <text x="1067" y="185" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#86198f">Audio Pack</text>
+  <text x="1067" y="206" text-anchor="middle" font-size="9.5" fill="#581c87">PCM5100A DAC</text>
+  <text x="1067" y="222" text-anchor="middle" font-size="9.5" fill="#581c87">PAM8908 Amp</text>
+  <text x="1067" y="242" text-anchor="middle" font-size="9.5" fill="#334155">VSYS/GND/I2S</text>
+  <text x="1067" y="256" text-anchor="middle" font-size="9.5" fill="#334155">Direct via PCB</text>
+  <rect x="1019" y="272" width="96" height="48" rx="5" fill="#ffffff" stroke="#a21caf"/>
+  <text x="1067" y="290" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#701a75">3.5mm PHONES</text>
+  <text x="1067" y="305" text-anchor="middle" font-size="9" fill="#86198f">GAIN = LO GAIN</text>
 
-  <!-- PC HOST -->
-  <line x1="845" y1="168" x2="950" y2="168" stroke="#0284c7" stroke-width="4"/>
-  <text x="898" y="158" text-anchor="middle" font-size="10" font-weight="bold" fill="#0284c7">USB</text>
-  <rect x="950" y="102" width="145" height="106" rx="10" fill="#e2e8f0" stroke="#475569" stroke-width="2"/>
-  <text x="1022" y="130" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Windows PC Host</text>
-  <text x="1022" y="150" text-anchor="middle" font-size="10" fill="#334155">SPK OUT: PC Mix Input</text>
-  <text x="1022" y="166" text-anchor="middle" font-size="10" fill="#334155">MIC IN: OBS Raw Capture</text>
-  <text x="1022" y="182" text-anchor="middle" font-size="10" fill="#334155">HID: DSP / EQ Control</text>
-
-  <!-- 6 I2S + Power Wires U2 -> U3 (1:1 horizontal pin-to-pin alignment) -->
-  <line x1="845" y1="278" x2="915" y2="278" stroke="#dc2626" stroke-width="2.5"/>
-  <line x1="845" y1="308" x2="915" y2="308" stroke="#1e293b" stroke-width="2.5"/>
-  <line x1="845" y1="338" x2="915" y2="338" stroke="#7c3aed" stroke-width="2.5"/>
-  <line x1="845" y1="368" x2="915" y2="368" stroke="#0d9488" stroke-width="2.5"/>
-  <line x1="845" y1="398" x2="915" y2="398" stroke="#0d9488" stroke-width="2.5"/>
-  <line x1="845" y1="428" x2="915" y2="428" stroke="#0d9488" stroke-width="2.5"/>
-
-  <!-- U3: Pimoroni Pico Audio Pack -->
-  <rect x="915" y="220" width="180" height="252" rx="10" fill="#fae8ff" stroke="#86198f" stroke-width="2.5"/>
-  <text x="1005" y="241" text-anchor="middle" font-size="12" font-weight="bold" fill="#701a75">U3: Pico Audio Pack</text>
-  <text x="1005" y="257" text-anchor="middle" font-size="10" fill="#86198f">PCM5100A + PAM8908 (LO GAIN)</text>
-
-  <rect x="915" y="266" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
-  <text x="999" y="282" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 39: VSYS (Amp+LDO)</text>
-
-  <rect x="915" y="296" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
-  <text x="999" y="312" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 38: GND</text>
-
-  <rect x="915" y="326" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
-  <text x="999" y="342" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 29: MUTE (GP22=1)</text>
-
-  <rect x="915" y="356" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
-  <text x="999" y="372" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 12: I2S DATA</text>
-
-  <rect x="915" y="386" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
-  <text x="999" y="402" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 14: I2S BCK (64fs)</text>
-
-  <rect x="915" y="416" width="168" height="24" rx="4" fill="#ffffff" stroke="#a21caf"/>
-  <text x="999" y="432" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#0f172a">Pin 15: I2S LRCK (48k)</text>
-
-  <text x="1005" y="459" text-anchor="middle" font-size="10" font-weight="bold" fill="#86198f">3.5mm Headphone Out (LO GAIN)</text>
+  <!-- PC HOST (Connected to U2 Center Socket USB) -->
+  <line x1="919" y1="334" x2="919" y2="378" stroke="#0284c7" stroke-width="3.5"/>
+  <text x="945" y="362" text-anchor="middle" font-size="10" font-weight="bold" fill="#0284c7">USB</text>
+  <rect x="752" y="378" width="334" height="106" rx="10" fill="#e2e8f0" stroke="#475569" stroke-width="2"/>
+  <text x="919" y="402" text-anchor="middle" font-size="13" font-weight="bold" fill="#0f172a">Windows PC Host</text>
+  <text x="919" y="422" text-anchor="middle" font-size="10.5" fill="#334155">Playback: Headphone (Biwamasu Mixer) — PC Audio Mix</text>
+  <text x="919" y="440" text-anchor="middle" font-size="10.5" fill="#334155">Capture:  Line (Biwamasu Mixer) — OBS Raw Pre-EQ</text>
+  <text x="919" y="458" text-anchor="middle" font-size="10.5" fill="#334155">HID: Setting Tool (11-Band EQ / Gains / Flash / Update)</text>
+  <text x="919" y="474" text-anchor="middle" font-size="9.5" fill="#64748b">(Use soft flexible data-capable Micro-USB cables)</text>
 
   <!-- Footnote -->
-  <rect x="28" y="502" width="1064" height="82" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
-  <text x="44" y="526" font-size="12" font-weight="bold" fill="#0f172a">Design &amp; Assembly Notes:</text>
-  <text x="44" y="546" font-size="11" fill="#334155">1. Solderless assembly on an MB-102 breadboard with 8 male-male jumper wires (2 between U1-U2 + 6 from U2 to U3) and 1x 33-ohm 1/4W resistor.</text>
-  <text x="44" y="564" font-size="11" fill="#334155">2. U1 and U2 share ONLY UART signal (via R1 + extension jumper) and GND. Leave VBUS (Pin 40), VSYS (Pin 39), and 3V3 (Pin 36) unconnected between U1 and U2.</text>
-  <text x="44" y="580" font-size="10.5" fill="#64748b">3. Pin 36 (3V3) on U3 (PIM544) is internally unconnected because U3 regulates its own clean 3.3V from VSYS onboard; no 3V3 wire is needed.</text>
+  <rect x="24" y="524" width="1112" height="114" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="40" y="547" font-size="12" font-weight="bold" fill="#0f172a">Design &amp; Assembly Notes:</text>
+  <text x="40" y="567" font-size="11" fill="#334155">1. Solderless assembly using Pimoroni Pico Omnibus + 2 short female-to-female jumper wires (&lt;=10 cm). U2 and U3 plug directly into Omnibus (0 loose I2S wires).</text>
+  <text x="40" y="586" font-size="11" fill="#334155">2. U1 (TX) sits standalone beside Omnibus and connects ONLY Pin 1 (GP0) &#8594; Omnibus Pin 2 (GP1) and Pin 3 (GND) &#8594; Omnibus Pin 3 (GND).</text>
+  <text x="40" y="605" font-size="11" fill="#334155">3. Both U1 and U2 MUST be Raspberry Pi Pico 2 H (RP2350): RP2350 digital GPIOs are 3.3V failsafe when unpowered, and TX GP0 uses 2 mA / SLOW slew damping (no external 33-ohm resistor required).</text>
+  <text x="40" y="624" font-size="11" fill="#334155">4. For HDMI capture card setups with ground-loop hum, plug a commercial ADuM3160 12 Mbps USB isolator directly into the Switch 2 Dock USB-A port (away from the analog DAC).</text>
 </svg>

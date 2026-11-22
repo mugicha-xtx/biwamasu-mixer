@@ -6,10 +6,10 @@ import math
 import os
 import pathlib
 import re
-import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 
 
 def f32(x: float) -> float:
@@ -93,10 +93,11 @@ synth_err_db = check_eq_response_err(-3.0, synth_bands_f64, sample_freqs)
 max_err_db = max(max_err_db, synth_err_db)
 assert max_err_db < 0.01, f'EQ float32 response drifted {max_err_db:.5f} dB'
 
-out = root / 'build-rx-dsp-logic'
-out.mkdir(exist_ok=True)
-try:
-    (out / 'memory.c').write_text('''
+with tempfile.TemporaryDirectory(prefix='biwamasu-rx-dsp-') as tmp_dir:
+    out = pathlib.Path(tmp_dir)
+    mem_c = out / 'memory.c'
+    elf_path = out / 'test.elf'
+    mem_c.write_text('''
 #include <stddef.h>
 void *memcpy(void *d,const void *s,size_t n){unsigned char *a=d;const unsigned char *b=s;while(n--)*a++=*b++;return d;}
 void *memset(void *d,int c,size_t n){unsigned char *a=d;while(n--)*a++=c;return d;}
@@ -112,8 +113,8 @@ int memcmp(const void *a,const void *b,size_t n){const unsigned char *x=a,*y=b;w
         'firmware/rx-mixer/dsp_core.c',
         'firmware/rx-mixer/rx_usb.c',
         'firmware/rx-mixer/selftest_pack.c',
-        'build-rx-dsp-logic/memory.c',
-        '-lgcc', '-o', 'build-rx-dsp-logic/test.elf'
+        str(mem_c),
+        '-lgcc', '-o', str(elf_path)
     ], cwd=root, check=True)
 
     uc_path = deps / 'boundary-test'
@@ -121,6 +122,7 @@ int memcmp(const void *a,const void *b,size_t n){const unsigned char *x=a,*y=b;w
         sys.path.insert(0, str(uc_path))
 
     try:
+        import unicorn
         from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS
         from unicorn.arm_const import UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_R0
         has_unicorn = True
@@ -128,7 +130,7 @@ int memcmp(const void *a,const void *b,size_t n){const unsigned char *x=a,*y=b;w
         has_unicorn = False
 
     if has_unicorn:
-        elf = (out / 'test.elf').read_bytes()
+        elf = elf_path.read_bytes()
         entry, phoff = struct.unpack_from('<II', elf, 24)
         phsize, phcount = struct.unpack_from('<HH', elf, 42)
         cpu = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
@@ -144,12 +146,11 @@ int memcmp(const void *a,const void *b,size_t n){const unsigned char *x=a,*y=b;w
         assert cpu.reg_read(UC_ARM_REG_PC) == 0x1007fff0, 'Selftest did not return'
         line = cpu.reg_read(UC_ARM_REG_R0)
         assert line == 0, f'Production selftest failed at selftest_pack.c:{line}'
-        engine = 'Unicorn 2.1.4 ARM'
+        uc_ver = getattr(unicorn, '__version__', 'installed')
+        engine = f'Unicorn {uc_ver} ARM'
     else:
         line = None
         engine = 'Skipped (Unicorn not installed); ARM freestanding compile passed'
-finally:
-    shutil.rmtree(out, ignore_errors=True)
 
 print(json.dumps({
     'passed': True,

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 mugicha_xtx
-"""Audit public-release/ for privacy hygiene, stripped image metadata, SPDX/license completeness, and clean git state."""
+"""Audit public-release/ for privacy hygiene, stripped image metadata, SPDX/license completeness, and clean working tree."""
 import json
 import pathlib
 import re
@@ -27,7 +27,8 @@ required_files = [
     'images/overview.jpg',
     'images/wiring-1-placement.jpg',
     'images/wiring-2-uart-link.jpg',
-    'images/wiring-3-audio-pack.jpg',
+    'images/wiring-3-case.jpg',
+    'images/setting-tool.png',
     'docs/USB_PID_APPLICATION.md',
     'tools/downloads.sha256.json',
 ]

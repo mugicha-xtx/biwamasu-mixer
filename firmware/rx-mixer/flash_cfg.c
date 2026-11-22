@@ -9,7 +9,11 @@
 
 #define CFG_MAGIC 0x50413253u // "S2AP"
 #define CFG_VERSION 1u
-#define CFG_FLASH_OFFSET ((uint32_t)(PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE))
+// Pico SDK's RP2350-E10 UF2 workaround writes 0x10FFFF00, which wraps modulo 4 MB
+// onto the final 4 KB sector (0x3FF000). Use the penultimate sector (0x3FE000) so
+// UF2 firmware updates never erase saved mixer/EQ settings.
+#define CFG_FLASH_OFFSET ((uint32_t)(PICO_FLASH_SIZE_BYTES - (2u * FLASH_SECTOR_SIZE)))
+#define LEGACY_CFG_FLASH_OFFSET ((uint32_t)(PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE))
 
 typedef struct {
     uint32_t magic;
@@ -32,11 +36,12 @@ static bool blob_valid(const pack_flash_blob_t *b) {
     if (b->magic != CFG_MAGIC || b->version != CFG_VERSION) return false;
     if (b->crc32 != dsp_crc32((const uint8_t *)b, sizeof(*b) - sizeof(uint32_t))) return false;
     if (b->eq_enabled > 1u) return false;
-    if (b->rx_pin_mode != 0u && b->rx_pin_mode != 1u && b->rx_pin_mode != 13u) return false;
-    if (b->game_db_x100 < -6000 || b->game_db_x100 > 1200) return false;
-    if (b->master_db_x100 < -6000 || b->master_db_x100 > 600) return false;
-    if (b->pc_trim_db_x100 < -2400 || b->pc_trim_db_x100 > 1200) return false;
-    if (!dsp_float_sane(b->preamp_linear) || !(b->preamp_linear >= 0.01f && b->preamp_linear <= 4.0f)) return false;
+    if (!dsp_rx_pin_mode_valid(b->rx_pin_mode)) return false;
+    if (b->game_db_x100 < DSP_GAME_DB_MIN_X100 || b->game_db_x100 > DSP_GAME_DB_MAX_X100) return false;
+    if (b->master_db_x100 < DSP_MASTER_DB_MIN_X100 || b->master_db_x100 > DSP_MASTER_DB_MAX_X100) return false;
+    if (b->pc_trim_db_x100 < DSP_PC_TRIM_DB_MIN_X100 || b->pc_trim_db_x100 > DSP_PC_TRIM_DB_MAX_X100) return false;
+    if (!dsp_float_sane(b->preamp_linear) ||
+        !(b->preamp_linear >= DSP_EQ_PREAMP_MIN_LINEAR && b->preamp_linear <= DSP_EQ_PREAMP_MAX_LINEAR)) return false;
     for (unsigned i = 0; i < DSP_EQ_BANDS; i++) {
         if (!dsp_biquad_stable(&b->coeffs[i])) return false;
     }
@@ -47,7 +52,11 @@ bool flash_cfg_load(dsp_mixer_t *mixer) {
     const pack_flash_blob_t *stored = (const pack_flash_blob_t *)(XIP_BASE + CFG_FLASH_OFFSET);
     pack_flash_blob_t copy;
     memcpy(&copy, stored, sizeof(copy));
-    if (!blob_valid(&copy)) return false;
+    if (!blob_valid(&copy)) {
+        const pack_flash_blob_t *legacy = (const pack_flash_blob_t *)(XIP_BASE + LEGACY_CFG_FLASH_OFFSET);
+        memcpy(&copy, legacy, sizeof(copy));
+        if (!blob_valid(&copy)) return false;
+    }
 
     uint32_t irq = 0;
     dsp_lock_irq(&irq);

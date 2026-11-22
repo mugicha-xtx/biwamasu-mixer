@@ -28,9 +28,9 @@ uint32_t dsp_crc32(const uint8_t *data, size_t len) {
 }
 
 float dsp_db_x100_to_linear(int32_t db_x100) {
-    if (db_x100 <= -6000) return 0.0f;
+    if (db_x100 <= -12000) return 0.0f;
     if (db_x100 == 0) return 1.0f;
-    if (db_x100 > 1200) db_x100 = 1200;
+    if (db_x100 > 2400) db_x100 = 2400;
 
     // 10^(db_x100 / 2000) = 2^(db_x100 * log2(10) / 2000)
     // Decompose into integer n + fraction f in [0, 1), compute 2^f via exp(f * ln(2)) Taylor series.
@@ -169,13 +169,18 @@ void dsp_eq_process_stereo(dsp_eq_t *eq, float *l_io, float *r_io) {
 }
 
 static void recompute_gains_unlocked(dsp_mixer_t *m) {
-    m->target_game_gain = dsp_db_x100_to_linear(m->params.game_db_x100);
-    m->target_master_gain = dsp_db_x100_to_linear(m->params.master_db_x100);
+    bool master_muted = (m->params.user_mute_mask & DSP_MUTE_MASTER) != 0u;
+    bool game_muted = (m->params.user_mute_mask & DSP_MUTE_GAME) != 0u;
+    bool pc_user_muted = (m->params.user_mute_mask & DSP_MUTE_PC) != 0u;
+    m->target_game_gain = game_muted ? 0.0f : dsp_db_x100_to_linear(m->params.game_db_x100);
+    m->target_master_gain = master_muted ? 0.0f : dsp_db_x100_to_linear(m->params.master_db_x100);
     for (unsigned ch = 0; ch < 2; ch++) {
-        bool muted = ((m->params.win_mute_mask & 1u) != 0u) ||
-                     ((m->params.win_mute_mask & (1u << (ch + 1u))) != 0u);
+        bool win_muted = ((m->params.win_mute_mask & 1u) != 0u) ||
+                         ((m->params.win_mute_mask & (1u << (ch + 1u))) != 0u) ||
+                         (m->params.win_vol_db_x100[0] <= -6000) ||
+                         (m->params.win_vol_db_x100[ch + 1u] <= -6000);
         int32_t db = m->params.win_vol_db_x100[0] + m->params.win_vol_db_x100[ch + 1u] + m->params.pc_trim_db_x100;
-        float g = muted ? 0.0f : dsp_db_x100_to_linear(db);
+        float g = (win_muted || pc_user_muted) ? 0.0f : dsp_db_x100_to_linear(db);
         if (ch == 0) m->target_pc_gain_l = g;
         else m->target_pc_gain_r = g;
     }
@@ -186,15 +191,15 @@ void dsp_mixer_init(dsp_mixer_t *m) {
     m->sw_low = DSP_RING_CAPACITY;
     m->pc_low = DSP_RING_CAPACITY;
     m->pc_step_q16 = 65536u;
-    m->params.game_db_x100 = 0;
-    m->params.master_db_x100 = -4500; // Safe headphone-friendly default -45.0 dB
-    m->params.pc_trim_db_x100 = 0;
+    m->params.game_db_x100 = DSP_GAME_DB_DEFAULT_X100;
+    m->params.master_db_x100 = DSP_MASTER_DB_DEFAULT_X100; // Safe headphone-friendly default -45.0 dB
+    m->params.pc_trim_db_x100 = DSP_PC_TRIM_DB_DEFAULT_X100;
     m->params.win_vol_db_x100[0] = 0;
     m->params.win_vol_db_x100[1] = 0;
     m->params.win_vol_db_x100[2] = 0;
     m->params.win_mute_mask = 0;
     m->params.eq_enabled = false;
-    m->params.rx_pin_mode = 13;
+    m->params.rx_pin_mode = DSP_RX_PIN_MODE_DEFAULT;
     dsp_eq_init_flat(&m->eq, false);
     recompute_gains_unlocked(m);
     m->cur_game_gain = m->target_game_gain;
@@ -233,8 +238,8 @@ void dsp_mixer_set_win_mute(dsp_mixer_t *m, uint8_t ch, bool muted) {
 
 void dsp_mixer_set_win_vol_q8(dsp_mixer_t *m, uint8_t ch, int16_t vol_q8) {
     if (ch > 2) return;
-    if (vol_q8 < -15360) vol_q8 = -15360;
-    if (vol_q8 > 0) vol_q8 = 0;
+    if (vol_q8 < DSP_WIN_VOL_Q8_MIN) vol_q8 = DSP_WIN_VOL_Q8_MIN;
+    if (vol_q8 > DSP_WIN_VOL_Q8_MAX) vol_q8 = DSP_WIN_VOL_Q8_MAX;
     int32_t db_x100 = ((int32_t)vol_q8 * 100) / 256;
     uint32_t irq = 0;
     dsp_lock_irq(&irq);
@@ -267,14 +272,18 @@ void dsp_mixer_set_test_tone(dsp_mixer_t *m, bool enabled) {
 uint32_t dsp_sw_level(const dsp_mixer_t *m) { return m->sw_write - m->sw_read; }
 uint32_t dsp_pc_level(const dsp_mixer_t *m) { return m->pc_write - m->pc_read; }
 
-void dsp_sw_flush(dsp_mixer_t *m) {
-    uint32_t irq = 0;
-    dsp_lock_irq(&irq);
+static void dsp_sw_flush_unlocked(dsp_mixer_t *m) {
     m->sw_read = m->sw_write;
     m->sw_primed = false;
     m->sw_ended = false;
     m->sw_fade_in = 0;
     m->sw_low = DSP_RING_CAPACITY;
+}
+
+void dsp_sw_flush(dsp_mixer_t *m) {
+    uint32_t irq = 0;
+    dsp_lock_irq(&irq);
+    dsp_sw_flush_unlocked(m);
     dsp_unlock_irq(irq);
 }
 
@@ -290,11 +299,7 @@ void dsp_sw_set_active(dsp_mixer_t *m, bool on) {
     dsp_lock_irq(&irq);
     m->sw_active = on;
     if (!on) {
-        m->sw_read = m->sw_write;
-        m->sw_primed = false;
-        m->sw_ended = false;
-        m->sw_fade_in = 0;
-        m->sw_low = DSP_RING_CAPACITY;
+        dsp_sw_flush_unlocked(m);
     }
     dsp_unlock_irq(irq);
 }
@@ -327,9 +332,7 @@ void dsp_sw_push_s16le(dsp_mixer_t *m, const uint8_t *pcm, unsigned frames) {
     dsp_unlock_irq(irq);
 }
 
-void dsp_pc_flush(dsp_mixer_t *m) {
-    uint32_t irq = 0;
-    dsp_lock_irq(&irq);
+static void dsp_pc_flush_unlocked(dsp_mixer_t *m) {
     m->pc_read = m->pc_write;
     m->pc_primed = false;
     m->pc_phase_q16 = 0;
@@ -337,6 +340,12 @@ void dsp_pc_flush(dsp_mixer_t *m) {
     m->pc_err_lp = 0.0f;
     memset(m->pc_hist, 0, sizeof(m->pc_hist));
     m->pc_low = DSP_RING_CAPACITY;
+}
+
+void dsp_pc_flush(dsp_mixer_t *m) {
+    uint32_t irq = 0;
+    dsp_lock_irq(&irq);
+    dsp_pc_flush_unlocked(m);
     dsp_unlock_irq(irq);
 }
 
@@ -344,13 +353,7 @@ void dsp_pc_set_active(dsp_mixer_t *m, bool on) {
     uint32_t irq = 0;
     dsp_lock_irq(&irq);
     m->pc_active = on;
-    m->pc_read = m->pc_write;
-    m->pc_primed = false;
-    m->pc_phase_q16 = 0;
-    m->pc_step_q16 = 65536u;
-    m->pc_err_lp = 0.0f;
-    memset(m->pc_hist, 0, sizeof(m->pc_hist));
-    m->pc_low = DSP_RING_CAPACITY;
+    dsp_pc_flush_unlocked(m);
     dsp_unlock_irq(irq);
 }
 

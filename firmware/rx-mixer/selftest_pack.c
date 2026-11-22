@@ -47,6 +47,7 @@ typedef struct {
     rx_usb_audio_t *mic;
     dsp_mixer_t *mixer;
     unsigned callbacks;
+    uint32_t last_status_state_ver;
 } route_ctx_t;
 
 typedef struct {
@@ -63,6 +64,12 @@ static selftest_scratch_t g_selftest_scratch;
 static void route_cb(const rx_packet_t *p, void *ctx) {
     route_ctx_t *r = (route_ctx_t *)ctx;
     r->callbacks++;
+    if (p->type == 2u && p->size == 64u) {
+        r->last_status_state_ver = (uint32_t)p->pcm[16] |
+                                   ((uint32_t)p->pcm[17] << 8) |
+                                   ((uint32_t)p->pcm[18] << 16) |
+                                   ((uint32_t)p->pcm[19] << 24);
+    }
     rx_route_packet(r->mic, r->mixer, p);
 }
 
@@ -74,7 +81,11 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     CHECK(dsp_crc32(vec, 9u) == 0xcbf43926u);
 
     // 2. dB -> linear checks
-    CHECK(dsp_db_x100_to_linear(-6000) == 0.0f);
+    CHECK(dsp_db_x100_to_linear(-12000) == 0.0f);
+    float g_m80 = dsp_db_x100_to_linear(-8000);
+    CHECK(g_m80 > 0.000099f && g_m80 < 0.000101f);
+    float g_p24 = dsp_db_x100_to_linear(2400);
+    CHECK(g_p24 > 15.84f && g_p24 < 15.86f);
     CHECK(dsp_db_x100_to_linear(0) == 1.0f);
     float g_m6 = dsp_db_x100_to_linear(-602);
     CHECK(g_m6 > 0.4995f && g_m6 < 0.5005f);
@@ -89,8 +100,8 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     dsp_mixer_init(m);
     dsp_eq_t *eq = &m->eq;
     CHECK(!m->params.eq_enabled && !eq->enabled);
-    CHECK(m->params.master_db_x100 == -4500);
-    CHECK(m->params.rx_pin_mode == 13u);
+    CHECK(m->params.master_db_x100 == DSP_MASTER_DB_DEFAULT_X100);
+    CHECK(m->params.rx_pin_mode == DSP_RX_PIN_MODE_DEFAULT);
     CHECK(eq->preamp_linear == 1.0f);
 
     dsp_mixer_set_eq_enabled(m, true);
@@ -201,6 +212,21 @@ uint32_t pack_selftest_run(dsp_mixer_t *m, rx_usb_audio_t *mic) {
     CHECK(mic->low == 142u);
     rx_usb_flush(mic);
     CHECK(mic->low == RX_CAPACITY);
+
+    // Status packet (type=2) carrying TX bcdDevice (0x0100) in upper 16 bits of word 4
+    memset(pcm, 0, 64u);
+    u32_le(pcm + 0u, 48000u);
+    u32_le(pcm + 4u, 2u);
+    u32_le(pcm + 8u, 16u);
+    u32_le(pcm + 12u, 3000000u);
+    u32_le(pcm + 16u, 3u | (0x0100u << 16));
+    unsigned status_bytes = build_v2_packet(wire, 2u, 1u, 100ull, 10u, 480ull, 64u, 0u, pcm);
+    rx_feed(parser, wire, status_bytes, route_cb, &ctx);
+    CHECK(parser->status == 1u);
+    CHECK((ctx.last_status_state_ver & 0xffffu) == 3u);
+    CHECK((ctx.last_status_state_ver >> 16) == 0x0100u);
+    rx_parser_reset(parser);
+    CHECK(!parser->locked);
 
     // 5. PC Speaker push + Hermite resample + Mix test
     dsp_sw_flush(m);

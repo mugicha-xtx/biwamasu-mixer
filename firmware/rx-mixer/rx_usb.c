@@ -87,9 +87,9 @@ static void rx_usb_recompute_gains_unlocked(rx_usb_audio_t *a) {
                      ((a->mute_mask & (1u << (c + 1u))) != 0u);
         int32_t total_q8 = (int32_t)a->vol_q8[0] + (int32_t)a->vol_q8[c + 1u];
         uint16_t q15;
-        if (muted || total_q8 <= -15360) {
+        if (muted || total_q8 <= DSP_WIN_VOL_Q8_MIN) {
             q15 = 0u;
-        } else if (total_q8 >= 0) {
+        } else if (total_q8 >= DSP_WIN_VOL_Q8_MAX) {
             q15 = 32768u;
         } else {
             int32_t db_x100 = (total_q8 * 25 - 32) / 64;
@@ -156,8 +156,8 @@ void rx_usb_set_mute(rx_usb_audio_t *a, uint8_t ch, bool muted) {
 
 void rx_usb_set_vol_q8(rx_usb_audio_t *a, uint8_t ch, int16_t vol_q8) {
     if (ch > 2u) return;
-    if (vol_q8 < -15360) vol_q8 = -15360;
-    if (vol_q8 > 0) vol_q8 = 0;
+    if (vol_q8 < DSP_WIN_VOL_Q8_MIN) vol_q8 = DSP_WIN_VOL_Q8_MIN;
+    if (vol_q8 > DSP_WIN_VOL_Q8_MAX) vol_q8 = DSP_WIN_VOL_Q8_MAX;
     uint32_t irq = 0;
     dsp_lock_irq(&irq);
     a->vol_q8[ch] = vol_q8;
@@ -187,8 +187,6 @@ void rx_route_packet(rx_usb_audio_t *mic, dsp_mixer_t *mixer, const rx_packet_t 
         mic->expected = p->index;
         mic->expected_seq = p->seq;
         mic->sessions++;
-        mic->first_index_low = (uint32_t)p->index;
-        mic->first_seq = p->seq;
     }
     if (p->index < mic->expected) {
         mic->duplicates++;

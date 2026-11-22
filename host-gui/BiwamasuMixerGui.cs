@@ -8,6 +8,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -21,8 +22,8 @@ using Microsoft.Win32.SafeHandles;
 [assembly: AssemblyCompany("mugicha_xtx")]
 [assembly: AssemblyProduct("Biwamasu Mixer")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 mugicha_xtx (MIT License)")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
 
 namespace BiwamasuMixerGui
 {
@@ -840,6 +841,9 @@ namespace BiwamasuMixerGui
 
     internal static class EqDspMath
     {
+        public const double DefaultPeakingQ = 1.41;
+        public const double DefaultShelfQ = 0.70710678;
+
         private static readonly Regex PreampRx = new Regex(
             @"^Preamp\s*:\s*([^\s]+)\s*dB\s*$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -1340,11 +1344,11 @@ namespace BiwamasuMixerGui
                     }
                 }
 
-                double defaultQ = (kind == FilterKind.PK) ? 1.41 : 0.71;
+                double defaultQ = (kind == FilterKind.PK) ? DefaultPeakingQ : DefaultShelfQ;
                 double q = quals.ContainsKey(slot) ? quals[slot] : defaultQ;
                 if ((fcode == 8 || fcode == 9) && q > 3.0)
                 {
-                    q = 0.71;
+                    q = DefaultShelfQ;
                 }
 
                 EqBandSpec spec = new EqBandSpec();
@@ -1512,7 +1516,7 @@ namespace BiwamasuMixerGui
                     }
                     else
                     {
-                        q = (kindStr == "PK" || kindStr == "PEQ") ? 1.41 : 0.70710678;
+                        q = (kindStr == "PK" || kindStr == "PEQ") ? DefaultPeakingQ : DefaultShelfQ;
                     }
 
                     EqBandSpec spec = new EqBandSpec();
@@ -1571,6 +1575,7 @@ namespace BiwamasuMixerGui
             return PackBandsIntoProfile(parsedBands, preampDb, finalLabel);
         }
 
+        // Prompt guides LLMs to practical musical Q values (0.10..20.00) inside the DSP validator range (0.06..30.0).
         public static string BuildAiEqPrompt(string deviceName, string goalText)
         {
             string dev = string.IsNullOrEmpty(deviceName) || deviceName.Trim().Length == 0
@@ -1661,10 +1666,8 @@ namespace BiwamasuMixerGui
             return profile;
         }
 
-        public static void SavePeaceFile(string path, EqProfile profile)
+        public static void AppendPeaceBodyLines(StringBuilder sb, EqProfile profile)
         {
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine("# Biwamasu Mixer Equalizer Preset (Equalizer APO / Peace format)");
             sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "Preamp: {0:0.0} dB", profile.PreampDb));
             for (int i = 0; i < 11; i++)
             {
@@ -1674,9 +1677,16 @@ namespace BiwamasuMixerGui
                 string fcStr = FormatFrequencyClean(b.FrequencyHz);
                 sb.AppendLine(string.Format(
                     CultureInfo.InvariantCulture,
-                    "Filter {0}: {1} {2} Fc {3} Hz Gain {4:0.0} dB Q {5:0.00}",
+                    "Filter {0}: {1} {2} Fc {3} Hz Gain {4:0.0} dB Q {5:0.00##}",
                     i + 1, state, kind, fcStr, b.GainDb, b.Q));
             }
+        }
+
+        public static void SavePeaceFile(string path, EqProfile profile)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("# Biwamasu Mixer Equalizer Preset (Equalizer APO / Peace format)");
+            AppendPeaceBodyLines(sb, profile);
             string dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
@@ -2053,14 +2063,14 @@ namespace BiwamasuMixerGui
                 {
                     int bandTop = Math.Max(1, track.Top - UiScale.Px(5));
                     int bandBottom = _showScaleLabels ? Math.Min(ClientSize.Height - 1, track.Bottom + UiScale.Px(8)) : Math.Min(ClientSize.Height - 2, track.Bottom + UiScale.Px(5));
-                    Rectangle dangerBg = new Rectangle(dangerStartX, bandTop, track.Right - dangerStartX, Math.Max(4, bandBottom - bandTop));
-                    using (SolidBrush pinkBrush = new SolidBrush(enabled ? Color.FromArgb(255, 226, 226) : Color.FromArgb(240, 232, 232)))
+                    Rectangle cautionBg = new Rectangle(dangerStartX, bandTop, track.Right - dangerStartX, Math.Max(4, bandBottom - bandTop));
+                    using (SolidBrush yellowBgBrush = new SolidBrush(enabled ? Color.FromArgb(255, 246, 208) : Color.FromArgb(240, 238, 228)))
                     {
-                        g.FillRectangle(pinkBrush, dangerBg);
+                        g.FillRectangle(yellowBgBrush, cautionBg);
                     }
                     if (_dangerThresholdDb > _minDb + 0.01)
                     {
-                        using (Pen boundaryPen = new Pen(Color.FromArgb(204, 60, 60), 1f))
+                        using (Pen boundaryPen = new Pen(enabled ? Color.FromArgb(196, 148, 24) : Color.FromArgb(196, 188, 168), 1f))
                         {
                             g.DrawLine(boundaryPen, dangerStartX, bandTop, dangerStartX, bandBottom);
                         }
@@ -2077,12 +2087,12 @@ namespace BiwamasuMixerGui
 
             if (hasDangerRegion && dangerStartX < track.Right)
             {
-                Rectangle redGroove = new Rectangle(dangerStartX, track.Top, track.Right - dangerStartX, track.Height);
-                using (SolidBrush redFill = new SolidBrush(enabled ? Color.FromArgb(232, 112, 112) : Color.FromArgb(220, 180, 180)))
-                using (Pen redBorder = new Pen(enabled ? Color.FromArgb(188, 44, 44) : Color.FromArgb(196, 150, 150), 1f))
+                Rectangle cautionGroove = new Rectangle(dangerStartX, track.Top, track.Right - dangerStartX, track.Height);
+                using (SolidBrush yellowGrooveFill = new SolidBrush(enabled ? Color.FromArgb(244, 212, 110) : Color.FromArgb(228, 224, 212)))
+                using (Pen yellowGrooveBorder = new Pen(enabled ? Color.FromArgb(186, 142, 32) : Color.FromArgb(200, 194, 178), 1f))
                 {
-                    g.FillRectangle(redFill, redGroove);
-                    g.DrawRectangle(redBorder, redGroove.Left, redGroove.Top, Math.Max(1, redGroove.Width - 1), redGroove.Height - 1);
+                    g.FillRectangle(yellowGrooveFill, cautionGroove);
+                    g.DrawRectangle(yellowGrooveBorder, cautionGroove.Left, cautionGroove.Top, Math.Max(1, cautionGroove.Width - 1), cautionGroove.Height - 1);
                 }
             }
 
@@ -2093,7 +2103,7 @@ namespace BiwamasuMixerGui
             if (fillWidth > 0 && enabled)
             {
                 Color activeColor = IsInDangerZone
-                    ? Color.FromArgb(212, 36, 36)
+                    ? Color.FromArgb(220, 158, 12)
                     : Color.FromArgb(0, 120, 215);
                 using (SolidBrush activeBrush = new SolidBrush(activeColor))
                 {
@@ -2106,7 +2116,7 @@ namespace BiwamasuMixerGui
                 using (Pen tickPen = new Pen(Color.FromArgb(156, 160, 168), 1f))
                 using (Pen zeroTickPen = new Pen(Color.FromArgb(90, 96, 108), 1f))
                 using (SolidBrush lblBrush = new SolidBrush(enabled ? Color.FromArgb(96, 100, 108) : SystemColors.GrayText))
-                using (SolidBrush redLblBrush = new SolidBrush(Color.FromArgb(172, 32, 32)))
+                using (SolidBrush cautionLblBrush = new SolidBrush(Color.FromArgb(148, 92, 0)))
                 {
                     for (int i = 0; i < _scaleTicks.Length; i++)
                     {
@@ -2128,7 +2138,7 @@ namespace BiwamasuMixerGui
                             if (lx < 0f) lx = 0f;
                             if (lx + sz.Width > ClientSize.Width) lx = ClientSize.Width - sz.Width;
                             bool tickInDanger = hasDangerRegion && td > _dangerThresholdDb + 0.04;
-                            g.DrawString(s, _tickFont, (tickInDanger && enabled) ? redLblBrush : lblBrush, lx, tickBot);
+                            g.DrawString(s, _tickFont, (tickInDanger && enabled) ? cautionLblBrush : lblBrush, lx, tickBot);
                         }
                     }
                 }
@@ -2156,8 +2166,8 @@ namespace BiwamasuMixerGui
             }
             else if (IsInDangerZone)
             {
-                thumbFill = (_dragging || _hovering) ? Color.FromArgb(228, 48, 48) : Color.FromArgb(208, 34, 34);
-                thumbBorder = Color.FromArgb(140, 16, 16);
+                thumbFill = (_dragging || _hovering) ? Color.FromArgb(236, 178, 26) : Color.FromArgb(220, 158, 12);
+                thumbBorder = Color.FromArgb(146, 98, 6);
             }
             else
             {
@@ -2743,23 +2753,20 @@ namespace BiwamasuMixerGui
     internal sealed class MixerStatus
     {
         public bool ObsMicActive;
-        public bool PcSpeakerActive;
-        public bool SwitchI2sActive;
-        public bool PcI2sActive;
         public bool UartLocked;
         public bool TestToneOn;
         public bool FlashConfigLoaded;
-        public byte ActiveUartRxPin;
         public byte UartRxPinMode;
         public bool EqEnabled;
         public double MasterDb;
         public double GameDb;
         public double PcTrimDb;
-        public double WindowsMasterVolDb;
         public bool WindowsMuted;
-        public uint CrcErrors;
+        public byte UserMuteMask;
         public uint FlashSaves;
         public uint ClipCount;
+        public ushort FirmwareBcd;
+        public ushort TxFirmwareBcd;
     }
 
     internal sealed class HidDeviceConnection : IDisposable
@@ -2787,6 +2794,18 @@ namespace BiwamasuMixerGui
 
         [DllImport("hid.dll", SetLastError = true)]
         private static extern bool HidD_GetFeature(SafeFileHandle hidDeviceObject, byte[] reportBuffer, int reportBufferLength);
+
+        [DllImport("hid.dll", SetLastError = true)]
+        private static extern bool HidD_GetAttributes(SafeFileHandle hidDeviceObject, ref HiddAttributes attributes);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct HiddAttributes
+        {
+            public int Size;
+            public ushort VendorID;
+            public ushort ProductID;
+            public ushort VersionNumber;
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         private struct SpDeviceInterfaceData
@@ -2980,7 +2999,6 @@ namespace BiwamasuMixerGui
         public MixerStatus ReadFullStatus()
         {
             byte[] r0 = ReadPage(0);
-            uint[] w0 = WordsFromPage(r0);
             byte[] r2 = ReadPage(2);
             uint[] w2 = WordsFromPage(r2);
             byte[] r3 = ReadPage(3);
@@ -2989,40 +3007,114 @@ namespace BiwamasuMixerGui
             byte flags = r0[7];
             MixerStatus s = new MixerStatus();
             s.ObsMicActive = (flags & 1) != 0;
-            s.PcSpeakerActive = (flags & 2) != 0;
-            s.SwitchI2sActive = (flags & 4) != 0;
-            s.PcI2sActive = (flags & 8) != 0;
             s.UartLocked = (flags & 16) != 0;
             s.TestToneOn = (flags & 32) != 0;
             s.FlashConfigLoaded = (flags & 64) != 0;
-            s.ActiveUartRxPin = r0[61];
             s.UartRxPinMode = r0[63];
             s.EqEnabled = w3[0] != 0;
             s.GameDb = Math.Round(ToSigned32(w3[1]) / 100.0, 1);
             s.MasterDb = Math.Round(ToSigned32(w3[2]) / 100.0, 1);
             s.PcTrimDb = Math.Round(ToSigned32(w3[3]) / 100.0, 1);
-            s.WindowsMasterVolDb = Math.Round(ToSigned32(w3[4]) / 100.0, 1);
             s.WindowsMuted = ((w3[7] & 1u) != 0) || ((w3[7] & 6u) == 6u);
-            s.CrcErrors = w0[4];
+            s.UserMuteMask = (byte)((w3[7] >> 8) & 7u);
             s.FlashSaves = w3[10];
             s.ClipCount = w2[8];
+            s.FirmwareBcd = ReadDeviceBcdVersion();
+            s.TxFirmwareBcd = s.UartLocked ? (ushort)(w3[12] >> 16) : (ushort)0;
             return s;
         }
 
-        public void WriteParams(bool eqEnabled, double gameDb, double masterDb, double pcTrimDb, byte rxPinMode)
+        public ushort ReadDeviceBcdVersion()
         {
-            short gameX100 = ClampShort(Math.Round(gameDb * 100.0), -6000, 1200);
-            short masterX100 = ClampShort(Math.Round(masterDb * 100.0), -6000, 600);
-            short pcX100 = ClampShort(Math.Round(pcTrimDb * 100.0), -2400, 1200);
-            byte pinByte = (rxPinMode == 0 || rxPinMode == 1 || rxPinMode == 13) ? rxPinMode : (byte)13;
+            try
+            {
+                SafeFileHandle h = EnsureHandle();
+                HiddAttributes attr = new HiddAttributes();
+                attr.Size = Marshal.SizeOf(typeof(HiddAttributes));
+                if (HidD_GetAttributes(h, ref attr))
+                {
+                    return attr.VersionNumber;
+                }
+            }
+            catch { }
+            return 0;
+        }
 
-            byte[] cmd = new byte[9];
+        public static Version UsbBcdToVersion(ushort bcd)
+        {
+            if (bcd == 0) return null;
+            int majHi = (bcd >> 12) & 0xF;
+            int majLo = (bcd >> 8) & 0xF;
+            int min = (bcd >> 4) & 0xF;
+            int pat = bcd & 0xF;
+            if (majHi > 9 || majLo > 9 || min > 9 || pat > 9)
+            {
+                return new Version((bcd >> 8) & 0xFF, min, pat);
+            }
+            return new Version(majHi * 10 + majLo, min, pat);
+        }
+
+        public static string FormatUsbBcdVersion(ushort bcd)
+        {
+            Version v = UsbBcdToVersion(bcd);
+            return v != null ? string.Format(CultureInfo.InvariantCulture, "v{0}.{1}.{2}", v.Major, v.Minor, v.Build) : "不明";
+        }
+
+        public static bool TryProbeDeviceBcd(ushort vid, ushort pid, out ushort bcdVersion)
+        {
+            bcdVersion = 0;
+            if (vid == 0 || pid == 0) return false;
+            try
+            {
+                using (HidDeviceConnection conn = new HidDeviceConnection(vid, pid))
+                {
+                    SafeFileHandle h = conn.OpenMatchingDevice();
+                    if (h == null) return false;
+                    try
+                    {
+                        HiddAttributes attr = new HiddAttributes();
+                        attr.Size = Marshal.SizeOf(typeof(HiddAttributes));
+                        if (HidD_GetAttributes(h, ref attr))
+                        {
+                            bcdVersion = attr.VersionNumber;
+                        }
+                        return true;
+                    }
+                    finally
+                    {
+                        h.Dispose();
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static void SendBootselCommand(ushort vid, ushort pid)
+        {
+            using (HidDeviceConnection conn = new HidDeviceConnection(vid, pid))
+            {
+                conn.EnterBootsel();
+            }
+        }
+
+        public void WriteParams(bool eqEnabled, double gameDb, double masterDb, double pcTrimDb, byte rxPinMode, byte userMuteMask)
+        {
+            short gameX100 = ClampShort(Math.Round(gameDb * 100.0), -6000, 2400);
+            short masterX100 = ClampShort(Math.Round(masterDb * 100.0), -8000, 600);
+            short pcX100 = ClampShort(Math.Round(pcTrimDb * 100.0), -2400, 2400);
+            byte pinByte = (rxPinMode == 0 || rxPinMode == 1 || rxPinMode == 13) ? rxPinMode : (byte)1;
+
+            byte[] cmd = new byte[10];
             cmd[0] = 0x40;
             cmd[1] = eqEnabled ? (byte)1 : (byte)0;
             Array.Copy(BitConverter.GetBytes(gameX100), 0, cmd, 2, 2);
             Array.Copy(BitConverter.GetBytes(masterX100), 0, cmd, 4, 2);
             Array.Copy(BitConverter.GetBytes(pcX100), 0, cmd, 6, 2);
             cmd[8] = pinByte;
+            cmd[9] = (byte)(0x80 | (userMuteMask & 7));
             Exchange(cmd, false);
         }
 
@@ -3164,6 +3256,1148 @@ namespace BiwamasuMixerGui
         }
     }
 
+    internal sealed class ReleaseVersionTargets
+    {
+        public Version TagVersion;
+        public Version ToolVersion;
+        public Version RxVersion;
+        public Version TxVersion;
+
+        public static ReleaseVersionTargets FromFallbackTag(Version tagVer)
+        {
+            if (tagVer == null) return null;
+            ReleaseVersionTargets t = new ReleaseVersionTargets();
+            t.TagVersion = tagVer;
+            t.ToolVersion = tagVer;
+            t.RxVersion = tagVer;
+            t.TxVersion = tagVer;
+            return t;
+        }
+    }
+
+    internal sealed class ReleaseCheckResult
+    {
+        public bool Success;
+        public bool NoReleasePublishedYet;
+        public string LatestTag;
+        public ReleaseVersionTargets Targets;
+        public string ReleasePageUrl;
+        public string ErrorMessage;
+    }
+
+    internal static class ReleaseUpdateChecker
+    {
+        public static readonly Version CurrentAppVersion = new Version(1, 0, 0);
+        public const string CurrentAppVersionText = "1.0.0";
+        public const string RepoTopPageUrl = "https://github.com/mugicha-xtx/biwamasu-mixer";
+        public const string ReleasesPageUrl = "https://github.com/mugicha-xtx/biwamasu-mixer/releases";
+        public const string LatestReleasePageUrl = "https://github.com/mugicha-xtx/biwamasu-mixer/releases/latest";
+        private const string LatestReleaseApiUrl = "https://api.github.com/repos/mugicha-xtx/biwamasu-mixer/releases/latest";
+
+        private static readonly Regex DraftTrueRx = new Regex(@"""draft""\s*:\s*true\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex PrereleaseTrueRx = new Regex(@"""prerelease""\s*:\s*true\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex SemVerRx = new Regex(@"^v?(\d+)\.(\d+)(?:\.(\d+))?(?:$|[-+])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex BodyCompRx = new Regex(@"(?:^|[\s/|,;・\-\*>`\(])\*{0,2}`?(Tool|RX|TX)`?\*{0,2}\s*:\s*\*{0,2}`?(v?\d+\.\d+(?:\.\d+)?)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.Multiline);
+
+        private static string GetPrefsPath()
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "BiwamasuMixer",
+                "update-prefs.txt");
+        }
+
+        public static void LoadPrefs(
+            out bool checkOnStartup,
+            out long lastCheckUtcTicks,
+            out string cachedTag,
+            out ReleaseVersionTargets cachedTargets,
+            out string cachedUrl)
+        {
+            checkOnStartup = true;
+            lastCheckUtcTicks = 0;
+            cachedTag = null;
+            cachedTargets = null;
+            cachedUrl = ReleasesPageUrl;
+            Version toolVer = null, rxVer = null, txVer = null;
+            try
+            {
+                string p = GetPrefsPath();
+                if (!File.Exists(p)) return;
+                string[] lines = File.ReadAllLines(p, Encoding.UTF8);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    int eq = lines[i].IndexOf('=');
+                    if (eq <= 0) continue;
+                    string k = lines[i].Substring(0, eq).Trim();
+                    string v = lines[i].Substring(eq + 1).Trim();
+                    long parsedTicks;
+                    Version parsedVer;
+                    if (string.Equals(k, "CheckOnStartup", StringComparison.OrdinalIgnoreCase))
+                    {
+                        checkOnStartup = !(v == "0" || string.Equals(v, "false", StringComparison.OrdinalIgnoreCase));
+                    }
+                    else if (string.Equals(k, "LastCheckUtcTicks", StringComparison.OrdinalIgnoreCase) &&
+                             long.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsedTicks))
+                    {
+                        lastCheckUtcTicks = parsedTicks;
+                    }
+                    else if (string.Equals(k, "LatestTag", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cachedTag = v;
+                    }
+                    else if (string.Equals(k, "LatestToolVersion", StringComparison.OrdinalIgnoreCase) &&
+                             TryParseTagVersion(v, out parsedVer))
+                    {
+                        toolVer = parsedVer;
+                    }
+                    else if (string.Equals(k, "LatestRxVersion", StringComparison.OrdinalIgnoreCase) &&
+                             TryParseTagVersion(v, out parsedVer))
+                    {
+                        rxVer = parsedVer;
+                    }
+                    else if (string.Equals(k, "LatestTxVersion", StringComparison.OrdinalIgnoreCase) &&
+                             TryParseTagVersion(v, out parsedVer))
+                    {
+                        txVer = parsedVer;
+                    }
+                    else if (string.Equals(k, "ReleaseUrl", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cachedUrl = SanitizeReleaseUrl(v);
+                    }
+                }
+
+                Version tagVer;
+                if (!string.IsNullOrEmpty(cachedTag) && TryParseTagVersion(cachedTag, out tagVer))
+                {
+                    cachedTargets = new ReleaseVersionTargets();
+                    cachedTargets.TagVersion = tagVer;
+                    cachedTargets.ToolVersion = toolVer ?? tagVer;
+                    cachedTargets.RxVersion = rxVer ?? tagVer;
+                    cachedTargets.TxVersion = txVer ?? tagVer;
+                }
+            }
+            catch { }
+        }
+
+        public static void SavePrefs(
+            bool checkOnStartup,
+            long lastCheckUtcTicks,
+            string cachedTag,
+            ReleaseVersionTargets targets,
+            string cachedUrl)
+        {
+            try
+            {
+                string p = GetPrefsPath();
+                string dir = Path.GetDirectoryName(p);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("CheckOnStartup=" + (checkOnStartup ? "1" : "0"));
+                sb.AppendLine("LastCheckUtcTicks=" + lastCheckUtcTicks.ToString(CultureInfo.InvariantCulture));
+                sb.AppendLine("LatestTag=" + (cachedTag ?? ""));
+                if (targets != null)
+                {
+                    if (targets.ToolVersion != null) sb.AppendLine("LatestToolVersion=" + FormatVer(targets.ToolVersion));
+                    if (targets.RxVersion != null) sb.AppendLine("LatestRxVersion=" + FormatVer(targets.RxVersion));
+                    if (targets.TxVersion != null) sb.AppendLine("LatestTxVersion=" + FormatVer(targets.TxVersion));
+                }
+                sb.AppendLine("ReleaseUrl=" + SanitizeReleaseUrl(cachedUrl));
+                File.WriteAllText(p, sb.ToString(), new UTF8Encoding(false));
+            }
+            catch { }
+        }
+
+        public static string FormatVer(Version v)
+        {
+            if (v == null) return "";
+            int build = v.Build >= 0 ? v.Build : 0;
+            return string.Format(CultureInfo.InvariantCulture, "v{0}.{1}.{2}", v.Major, v.Minor, build);
+        }
+
+        public static bool TryParseTagVersion(string tag, out Version version)
+        {
+            version = null;
+            if (string.IsNullOrEmpty(tag)) return false;
+            Match m = SemVerRx.Match(tag.Trim());
+            if (!m.Success) return false;
+            int maj, min, pat = 0;
+            if (!int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out maj)) return false;
+            if (!int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out min)) return false;
+            if (m.Groups[3].Success && m.Groups[3].Value.Length > 0)
+            {
+                if (!int.TryParse(m.Groups[3].Value, NumberStyles.None, CultureInfo.InvariantCulture, out pat)) return false;
+            }
+            version = new Version(maj, min, pat);
+            return true;
+        }
+
+        private static bool TryExtractJsonStringField(string json, string fieldName, out string value)
+        {
+            value = null;
+            if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(fieldName)) return false;
+            string pattern = "\"" + Regex.Escape(fieldName) + "\"\\s*:\\s*";
+            Match m = Regex.Match(json, pattern);
+            if (!m.Success) return false;
+            int pos = m.Index + m.Length;
+            if (pos >= json.Length || json[pos] != '"') return false;
+            pos++;
+            StringBuilder sb = new StringBuilder();
+            while (pos < json.Length)
+            {
+                char ch = json[pos++];
+                if (ch == '"')
+                {
+                    value = sb.ToString();
+                    return true;
+                }
+                if (ch == '\\')
+                {
+                    if (pos >= json.Length) return false;
+                    char esc = json[pos++];
+                    switch (esc)
+                    {
+                        case '"': sb.Append('"'); break;
+                        case '\\': sb.Append('\\'); break;
+                        case '/': sb.Append('/'); break;
+                        case 'b': sb.Append('\b'); break;
+                        case 'f': sb.Append('\f'); break;
+                        case 'n': sb.Append('\n'); break;
+                        case 'r': sb.Append('\r'); break;
+                        case 't': sb.Append('\t'); break;
+                        case 'u':
+                            if (pos + 4 <= json.Length)
+                            {
+                                ushort hex;
+                                if (ushort.TryParse(json.Substring(pos, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out hex))
+                                {
+                                    sb.Append((char)hex);
+                                    pos += 4;
+                                }
+                            }
+                            break;
+                        default:
+                            sb.Append(esc);
+                            break;
+                    }
+                }
+                else
+                {
+                    sb.Append(ch);
+                }
+            }
+            return false;
+        }
+
+        private static void ParseBodyComponentVersions(string body, ReleaseVersionTargets targets)
+        {
+            if (string.IsNullOrEmpty(body) || targets == null) return;
+            bool seenTool = false;
+            bool seenRx = false;
+            bool seenTx = false;
+            MatchCollection matches = BodyCompRx.Matches(body);
+            for (int i = 0; i < matches.Count; i++)
+            {
+                Match m = matches[i];
+                if (!m.Success) continue;
+                Version parsed;
+                if (!TryParseTagVersion(m.Groups[2].Value, out parsed)) continue;
+                string key = m.Groups[1].Value;
+                if (!seenTool && string.Equals(key, "Tool", StringComparison.OrdinalIgnoreCase))
+                {
+                    targets.ToolVersion = parsed;
+                    seenTool = true;
+                }
+                else if (!seenRx && string.Equals(key, "RX", StringComparison.OrdinalIgnoreCase))
+                {
+                    targets.RxVersion = parsed;
+                    seenRx = true;
+                }
+                else if (!seenTx && string.Equals(key, "TX", StringComparison.OrdinalIgnoreCase))
+                {
+                    targets.TxVersion = parsed;
+                    seenTx = true;
+                }
+            }
+        }
+
+        public static string SanitizeReleaseUrl(string candidate)
+        {
+            if (!string.IsNullOrEmpty(candidate))
+            {
+                Uri uri;
+                if (Uri.TryCreate(candidate.Trim(), UriKind.Absolute, out uri) &&
+                    string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase) &&
+                    uri.AbsolutePath.StartsWith("/mugicha-xtx/biwamasu-mixer/releases", StringComparison.OrdinalIgnoreCase))
+                {
+                    return uri.AbsoluteUri;
+                }
+            }
+            return ReleasesPageUrl;
+        }
+
+        public static bool TryParseLatestReleaseJson(string json, out string tagName, out ReleaseVersionTargets targets, out string safeUrl)
+        {
+            tagName = null;
+            targets = null;
+            safeUrl = ReleasesPageUrl;
+            if (string.IsNullOrEmpty(json)) return false;
+            if (DraftTrueRx.IsMatch(json) || PrereleaseTrueRx.IsMatch(json)) return false;
+            string rawTag;
+            if (!TryExtractJsonStringField(json, "tag_name", out rawTag) || string.IsNullOrEmpty(rawTag)) return false;
+            rawTag = rawTag.Trim();
+            Version tagVer;
+            if (!TryParseTagVersion(rawTag, out tagVer)) return false;
+            tagName = rawTag.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? rawTag : ("v" + rawTag);
+
+            targets = ReleaseVersionTargets.FromFallbackTag(tagVer);
+            string bodyText;
+            if (TryExtractJsonStringField(json, "body", out bodyText))
+            {
+                ParseBodyComponentVersions(bodyText, targets);
+            }
+
+            string rawUrl;
+            if (TryExtractJsonStringField(json, "html_url", out rawUrl))
+            {
+                safeUrl = SanitizeReleaseUrl(rawUrl);
+            }
+            return true;
+        }
+
+        public static bool IsUpdateAvailableForVersions(
+            ReleaseVersionTargets targets,
+            Version appVersion,
+            Version rxFirmware,
+            Version txFirmware)
+        {
+            if (targets == null) return false;
+            if (targets.ToolVersion != null && appVersion != null && targets.ToolVersion > appVersion) return true;
+            if (targets.RxVersion != null && rxFirmware != null && targets.RxVersion > rxFirmware) return true;
+            if (targets.TxVersion != null && txFirmware != null && targets.TxVersion > txFirmware) return true;
+            return false;
+        }
+
+        public static bool IsUpdateAvailable(ReleaseVersionTargets targets, Version rxFirmware, Version txFirmware)
+        {
+            return IsUpdateAvailableForVersions(targets, CurrentAppVersion, rxFirmware, txFirmware);
+        }
+
+        public static ReleaseCheckResult FetchLatestFromGitHub()
+        {
+            ReleaseCheckResult res = new ReleaseCheckResult();
+            res.ReleasePageUrl = ReleasesPageUrl;
+            try
+            {
+                // Explicitly enable TLS 1.2 (3072) on .NET Framework 4.x
+                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(LatestReleaseApiUrl);
+                req.Method = "GET";
+                req.Timeout = 5000;
+                req.ReadWriteTimeout = 5000;
+                req.AllowAutoRedirect = true;
+                req.MaximumAutomaticRedirections = 3;
+                req.Accept = "application/vnd.github+json";
+                req.UserAgent = "BiwamasuMixer-SettingTool/" + CurrentAppVersionText;
+
+                using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                using (Stream st = resp.GetResponseStream())
+                {
+                    if (st == null)
+                    {
+                        res.ErrorMessage = "GitHubから応答を取得できませんでした。";
+                        return res;
+                    }
+                    MemoryStream ms = new MemoryStream();
+                    byte[] buf = new byte[4096];
+                    int total = 0;
+                    while (total < 65536)
+                    {
+                        int n = st.Read(buf, 0, Math.Min(buf.Length, 65536 - total));
+                        if (n <= 0) break;
+                        ms.Write(buf, 0, n);
+                        total += n;
+                    }
+                    string body = Encoding.UTF8.GetString(ms.ToArray());
+                    string tag;
+                    ReleaseVersionTargets targets;
+                    string url;
+                    if (!TryParseLatestReleaseJson(body, out tag, out targets, out url))
+                    {
+                        res.NoReleasePublishedYet = true;
+                        res.Success = true;
+                        return res;
+                    }
+                    res.Success = true;
+                    res.LatestTag = tag;
+                    res.Targets = targets;
+                    res.ReleasePageUrl = url;
+                    return res;
+                }
+            }
+            catch (WebException wex)
+            {
+                HttpWebResponse httpResp = wex.Response as HttpWebResponse;
+                if (httpResp != null && httpResp.StatusCode == HttpStatusCode.NotFound)
+                {
+                    res.Success = true;
+                    res.NoReleasePublishedYet = true;
+                    return res;
+                }
+                res.ErrorMessage = "更新情報の取得に失敗しました: " + wex.Message;
+                return res;
+            }
+            catch (Exception ex)
+            {
+                res.ErrorMessage = "更新情報の取得に失敗しました: " + ex.Message;
+                return res;
+            }
+        }
+
+        public static void OpenSafeReleasePage(IWin32Window owner, string url)
+        {
+            string target = SanitizeReleaseUrl(url);
+            try
+            {
+                Process.Start(target);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(owner, "ブラウザを開けませんでした:\r\n" + target + "\r\n\r\n" + ex.Message, "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        public static void OpenSafeRepoTopPage(IWin32Window owner)
+        {
+            try
+            {
+                Process.Start(RepoTopPageUrl);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(owner, "ブラウザを開けませんでした:\r\n" + RepoTopPageUrl + "\r\n\r\n" + ex.Message, "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+
+    internal static class Uf2FlashHelper
+    {
+        public sealed class BootselScanResult
+        {
+            public readonly List<string> Rp2350Drives = new List<string>();
+            public readonly List<string> Rp2040Drives = new List<string>();
+        }
+
+        public static bool ValidateRp2350Uf2Bytes(byte[] data, out int blockCount, out string error)
+        {
+            blockCount = 0;
+            error = null;
+            if (data == null || data.Length < 512 || (data.Length % 512) != 0)
+            {
+                error = "有効なUF2ファイルではありません（ファイルサイズが512バイト単位ではありません）。";
+                return false;
+            }
+            if (data.Length > 16 * 1024 * 1024)
+            {
+                error = "UF2ファイルが大きすぎます。";
+                return false;
+            }
+            int blocks = data.Length / 512;
+            bool sawRp2350Arm = false;
+            for (int i = 0; i < blocks; i++)
+            {
+                int off = i * 512;
+                uint m0 = BitConverter.ToUInt32(data, off);
+                uint m1 = BitConverter.ToUInt32(data, off + 4);
+                uint flags = BitConverter.ToUInt32(data, off + 8);
+                uint family = BitConverter.ToUInt32(data, off + 28);
+                uint mEnd = BitConverter.ToUInt32(data, off + 508);
+                if (m0 != 0x0A324655u || m1 != 0x9E5D5157u || mEnd != 0x0AB16F30u)
+                {
+                    error = "UF2ファイルのヘッダーが破損しているか、別の形式のファイルです。";
+                    return false;
+                }
+                if ((flags & 0x00002000u) == 0)
+                {
+                    error = "UF2ファイルに対象マイコン情報（Family ID）が含まれていません。";
+                    return false;
+                }
+                if (family == 0xE48BFF56u)
+                {
+                    error = "このファイルは初代 Raspberry Pi Pico (RP2040) 用です。Pico 2 H (RP2350) 用のUF2ファイルを指定してください。";
+                    return false;
+                }
+                if (family == 0xE48BFF59u)
+                {
+                    sawRp2350Arm = true;
+                }
+                else if (family != 0xE48BFF57u && family != 0xE48BFF58u && family != 0xE48BFF5Au)
+                {
+                    error = string.Format(CultureInfo.InvariantCulture, "RP2350以外のマイコン用UF2ファイルです (Family ID: 0x{0:X8})。", family);
+                    return false;
+                }
+            }
+            if (!sawRp2350Arm)
+            {
+                error = "Pico 2 H (RP2350 ARM) 用のプログラムブロックが見つかりません。";
+                return false;
+            }
+            blockCount = blocks;
+            return true;
+        }
+
+        public static bool ValidateRp2350Uf2File(string path, out int blockCount, out string error)
+        {
+            blockCount = 0;
+            error = null;
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                error = "指定されたUF2ファイルが見つかりません。";
+                return false;
+            }
+            try
+            {
+                FileInfo fi = new FileInfo(path);
+                if (fi.Length < 512 || fi.Length > 16 * 1024 * 1024 || (fi.Length % 512) != 0)
+                {
+                    error = "有効なUF2ファイルではありません（ファイルサイズが不正です）。";
+                    return false;
+                }
+                return ValidateRp2350Uf2Bytes(File.ReadAllBytes(path), out blockCount, out error);
+            }
+            catch (Exception ex)
+            {
+                error = "UF2ファイルの読み込みに失敗しました: " + ex.Message;
+                return false;
+            }
+        }
+
+        public static BootselScanResult ScanBootselDrives()
+        {
+            BootselScanResult res = new BootselScanResult();
+            try
+            {
+                DriveInfo[] drives = DriveInfo.GetDrives();
+                for (int i = 0; i < drives.Length; i++)
+                {
+                    try
+                    {
+                        DriveInfo d = drives[i];
+                        if (d.DriveType != DriveType.Removable || !d.IsReady) continue;
+                        string root = d.RootDirectory.FullName;
+                        string infoPath = Path.Combine(root, "INFO_UF2.TXT");
+                        if (!File.Exists(infoPath)) continue;
+                        FileInfo fi = new FileInfo(infoPath);
+                        if (fi.Length <= 0 || fi.Length > 16384) continue;
+                        string info = File.ReadAllText(infoPath, Encoding.ASCII);
+                        if (info.IndexOf("RP2350", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            res.Rp2350Drives.Add(root);
+                        }
+                        else if (info.IndexOf("RPI-RP2", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            res.Rp2040Drives.Add(root);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return res;
+        }
+
+        public static string FindDefaultUf2Path(string appBaseDir, string fileName)
+        {
+            string[] candidates = new string[]
+            {
+                Path.Combine(appBaseDir, fileName),
+                Path.Combine(appBaseDir, "dist", fileName)
+            };
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                try
+                {
+                    if (File.Exists(candidates[i])) return Path.GetFullPath(candidates[i]);
+                }
+                catch { }
+            }
+            return Path.Combine(appBaseDir, fileName);
+        }
+    }
+
+    internal sealed class FirmwareFlashForm : Form
+    {
+        private readonly ushort _vid;
+        private readonly ushort _bridgePid;
+        private readonly ushort _mixerPid;
+        private readonly Action _releaseMainHidCallback;
+        private readonly TextBox _txtTxPath;
+        private readonly TextBox _txtRxPath;
+        private readonly Label _lblDetected;
+        private readonly Label _lblProgress;
+        private readonly Button _btnFlashTx;
+        private readonly Button _btnFlashRx;
+        private readonly Button _btnBrowseTx;
+        private readonly Button _btnBrowseRx;
+        private readonly Button _btnOpenLatestRelease;
+        private readonly Button _btnClose;
+        private readonly System.Windows.Forms.Timer _scanTimer;
+        private bool _flashing;
+
+        public FirmwareFlashForm(
+            Icon appIcon,
+            string appBaseDir,
+            ushort vid,
+            ushort bridgePid,
+            ushort mixerPid,
+            Action releaseMainHidCallback)
+        {
+            _vid = vid;
+            _bridgePid = bridgePid;
+            _mixerPid = mixerPid;
+            _releaseMainHidCallback = releaseMainHidCallback;
+
+            AutoScaleMode = AutoScaleMode.None;
+            Font = UiScale.CreateUiFont();
+            if (appIcon != null) Icon = appIcon;
+            Text = "Pico 2 H ファームウェア書き込み (初回組立・アップデート)";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.CenterParent;
+            ClientSize = new Size(UiScale.Px(652), UiScale.Px(488));
+
+            int innerBoxTextWidth = UiScale.Px(596);
+
+            TableLayoutPanel root = new TableLayoutPanel();
+            root.Dock = DockStyle.Fill;
+            root.Padding = UiScale.Pad(12, 10, 12, 10);
+            root.ColumnCount = 1;
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            root.RowCount = 5;
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            // 1. Live USB / BOOTSEL status
+            GroupBox grpStatus = new GroupBox();
+            grpStatus.Text = "現在のPC接続状況（書き込むPicoを1台だけPCにUSB接続してください）";
+            grpStatus.Dock = DockStyle.Fill;
+            grpStatus.AutoSize = true;
+            grpStatus.Margin = UiScale.Pad(0, 0, 0, 8);
+            grpStatus.Padding = UiScale.Pad(10, 6, 10, 10);
+
+            TableLayoutPanel statusGrid = new TableLayoutPanel();
+            statusGrid.Dock = DockStyle.Fill;
+            statusGrid.AutoSize = true;
+            statusGrid.ColumnCount = 1;
+            statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            statusGrid.RowCount = 1;
+            statusGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            _lblDetected = new Label();
+            _lblDetected.AutoSize = true;
+            _lblDetected.MaximumSize = new Size(innerBoxTextWidth, 0);
+            _lblDetected.Margin = UiScale.Pad(0, 2, 0, 2);
+            _lblDetected.Text = "確認中...";
+            statusGrid.Controls.Add(_lblDetected, 0, 0);
+            grpStatus.Controls.Add(statusGrid);
+
+            // 2. TX section
+            GroupBox grpTx = BuildTargetGroup(
+                "① Switch 2 側の Pico 2 H（音声送信ブリッジ: biwamasu-mixer-tx.uf2）",
+                "新品のPico 2 H（またはSwitch 2から外したPico①）をPCに繋いで押してください。",
+                Uf2FlashHelper.FindDefaultUf2Path(appBaseDir, "biwamasu-mixer-tx.uf2"),
+                "① Switch 2側 (TX) を書き込む",
+                innerBoxTextWidth,
+                out _txtTxPath,
+                out _btnBrowseTx,
+                out _btnFlashTx);
+            _btnBrowseTx.Click += delegate { BrowseUf2(_txtTxPath, "Switch 2側 (TX) 用 UF2 を選択"); };
+            _btnFlashTx.Click += delegate { ExecuteFlash(true); };
+
+            // 3. RX section
+            GroupBox grpRx = BuildTargetGroup(
+                "② PC・ヘッドホン側の Pico 2 H（ミキサー本体: biwamasu-mixer-rx.uf2）",
+                "新品のPico 2 H（またはPC側のミキサー本体）を繋いで押してください。書込済みの場合は自動で更新モードへ切り替わります。",
+                Uf2FlashHelper.FindDefaultUf2Path(appBaseDir, "biwamasu-mixer-rx.uf2"),
+                "② PC・ヘッドホン側 (RX) を書き込む",
+                innerBoxTextWidth,
+                out _txtRxPath,
+                out _btnBrowseRx,
+                out _btnFlashRx);
+            _btnBrowseRx.Click += delegate { BrowseUf2(_txtRxPath, "PC・ヘッドホン側 (RX) 用 UF2 を選択"); };
+            _btnFlashRx.Click += delegate { ExecuteFlash(false); };
+
+            // 4. Progress / note
+            _lblProgress = new Label();
+            _lblProgress.AutoSize = true;
+            _lblProgress.MaximumSize = new Size(UiScale.Px(620), 0);
+            _lblProgress.ForeColor = SystemColors.ControlDarkDark;
+            _lblProgress.Margin = UiScale.Pad(2, 4, 2, 4);
+            _lblProgress.Text = "※新品のPico 2 HはUSBケーブルを挿すだけで自動的に書き込みモードになります（白いBOOTSELボタンを押す必要はありません）。";
+
+            // 5. Bottom bar
+            TableLayoutPanel bottomBar = new TableLayoutPanel();
+            bottomBar.Dock = DockStyle.Fill;
+            bottomBar.AutoSize = true;
+            bottomBar.ColumnCount = 2;
+            bottomBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bottomBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            bottomBar.RowCount = 1;
+            bottomBar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            bottomBar.Margin = new Padding(0);
+
+            _btnOpenLatestRelease = UiScale.CreateButton("最新リリースページを開く (GitHub)(&G)...", 252, 28);
+            _btnOpenLatestRelease.Margin = new Padding(0);
+            _btnOpenLatestRelease.Click += delegate
+            {
+                ReleaseUpdateChecker.OpenSafeReleasePage(this, ReleaseUpdateChecker.LatestReleasePageUrl);
+            };
+
+            FlowLayoutPanel rightClose = new FlowLayoutPanel();
+            rightClose.FlowDirection = FlowDirection.RightToLeft;
+            rightClose.Dock = DockStyle.Fill;
+            rightClose.AutoSize = true;
+            rightClose.WrapContents = false;
+            rightClose.Margin = new Padding(0);
+
+            _btnClose = UiScale.CreateButton("閉じる", 90, 28);
+            _btnClose.Margin = new Padding(0);
+            _btnClose.DialogResult = DialogResult.Cancel;
+            rightClose.Controls.Add(_btnClose);
+            CancelButton = _btnClose;
+
+            bottomBar.Controls.Add(_btnOpenLatestRelease, 0, 0);
+            bottomBar.Controls.Add(rightClose, 1, 0);
+
+            root.Controls.Add(grpStatus, 0, 0);
+            root.Controls.Add(grpTx, 0, 1);
+            root.Controls.Add(grpRx, 0, 2);
+            root.Controls.Add(_lblProgress, 0, 3);
+            root.Controls.Add(bottomBar, 0, 4);
+            Controls.Add(root);
+
+            _scanTimer = new System.Windows.Forms.Timer();
+            _scanTimer.Interval = 1000;
+            _scanTimer.Tick += delegate
+            {
+                if (!_flashing) RefreshDetectionUi();
+            };
+        }
+
+        private static GroupBox BuildTargetGroup(
+            string title,
+            string desc,
+            string defaultPath,
+            string flashBtnText,
+            int maxDescWidthPx,
+            out TextBox txtPath,
+            out Button btnBrowse,
+            out Button btnFlash)
+        {
+            GroupBox grp = new GroupBox();
+            grp.Text = title;
+            grp.Dock = DockStyle.Fill;
+            grp.AutoSize = true;
+            grp.Margin = UiScale.Pad(0, 0, 0, 8);
+            grp.Padding = UiScale.Pad(10, 6, 10, 10);
+
+            TableLayoutPanel grid = new TableLayoutPanel();
+            grid.Dock = DockStyle.Fill;
+            grid.AutoSize = true;
+            grid.ColumnCount = 3;
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.RowCount = 2;
+            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            Label lblDesc = new Label();
+            lblDesc.Text = desc;
+            lblDesc.ForeColor = SystemColors.ControlDarkDark;
+            lblDesc.AutoSize = true;
+            lblDesc.MaximumSize = new Size(maxDescWidthPx, 0);
+            lblDesc.Margin = UiScale.Pad(0, 2, 0, 6);
+            grid.Controls.Add(lblDesc, 0, 0);
+            grid.SetColumnSpan(lblDesc, 3);
+
+            txtPath = new TextBox();
+            txtPath.Text = defaultPath;
+            txtPath.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+            txtPath.Margin = UiScale.Pad(0, 2, 6, 2);
+
+            btnBrowse = UiScale.CreateButton("参照...", 76, 27);
+            btnBrowse.Margin = UiScale.Pad(0, 0, 6, 2);
+
+            btnFlash = UiScale.CreateButton(flashBtnText, 224, 27);
+            btnFlash.Margin = UiScale.Pad(0, 0, 0, 2);
+
+            grid.Controls.Add(txtPath, 0, 1);
+            grid.Controls.Add(btnBrowse, 1, 1);
+            grid.Controls.Add(btnFlash, 2, 1);
+            grp.Controls.Add(grid);
+            return grp;
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            RefreshDetectionUi();
+            _scanTimer.Start();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (_flashing && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                return;
+            }
+            _scanTimer.Stop();
+            base.OnFormClosing(e);
+        }
+
+        private void BrowseUf2(TextBox targetBox, string title)
+        {
+            using (OpenFileDialog dlg = new OpenFileDialog())
+            {
+                dlg.Title = title;
+                dlg.Filter = "UF2 ファームウェア (*.uf2)|*.uf2|すべてのファイル (*.*)|*.*";
+                try
+                {
+                    string dir = Path.GetDirectoryName(targetBox.Text);
+                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)) dlg.InitialDirectory = dir;
+                }
+                catch { }
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    targetBox.Text = dlg.FileName;
+                }
+            }
+        }
+
+        private void RefreshDetectionUi()
+        {
+            Uf2FlashHelper.BootselScanResult scan = Uf2FlashHelper.ScanBootselDrives();
+            if (scan.Rp2040Drives.Count > 0 && scan.Rp2350Drives.Count == 0)
+            {
+                _lblDetected.ForeColor = Color.FromArgb(168, 20, 20);
+                _lblDetected.Text = string.Format(
+                    "警告: 初代 Raspberry Pi Pico (RP2040: {0}) が接続されています。本機には『Pico 2 H (RP2350)』が必要です。",
+                    scan.Rp2040Drives[0]);
+                return;
+            }
+            if (scan.Rp2350Drives.Count > 1)
+            {
+                _lblDetected.ForeColor = Color.FromArgb(168, 92, 0);
+                _lblDetected.Text = "注意: 複数の Pico 2 (RP2350) ドライブが同時に開いています。書き込む1台だけを接続してください。";
+                return;
+            }
+            if (scan.Rp2350Drives.Count == 1)
+            {
+                _lblDetected.ForeColor = Color.FromArgb(16, 108, 48);
+                _lblDetected.Text = string.Format("検出済み: BOOTSEL書込モードの Pico 2 ({0}) — そのまま書き込めます", scan.Rp2350Drives[0]);
+                return;
+            }
+
+            ushort rxBcd = 0, txBcd = 0;
+            bool hasRx = HidDeviceConnection.TryProbeDeviceBcd(_vid, _mixerPid, out rxBcd);
+            bool hasTx = (_bridgePid != 0) && HidDeviceConnection.TryProbeDeviceBcd(_vid, _bridgePid, out txBcd);
+            if (hasRx && hasTx)
+            {
+                _lblDetected.ForeColor = Color.FromArgb(168, 92, 0);
+                _lblDetected.Text = "注意: Switch 2側 (TX) と PC側 (RX) の両方がPCに接続されています。書き込む1台だけを繋いでください。";
+            }
+            else if (hasRx)
+            {
+                _lblDetected.ForeColor = Color.FromArgb(16, 108, 48);
+                _lblDetected.Text = string.Format(
+                    "検出済み: PC・ヘッドホン側ミキサー本体 (RX, {0}) — BOOTSELボタン操作なしで更新できます",
+                    HidDeviceConnection.FormatUsbBcdVersion(rxBcd));
+            }
+            else if (hasTx)
+            {
+                _lblDetected.ForeColor = Color.FromArgb(16, 108, 48);
+                _lblDetected.Text = string.Format(
+                    "検出済み: Switch 2側ブリッジ (TX, {0}) — BOOTSELボタン操作なしで更新できます",
+                    HidDeviceConnection.FormatUsbBcdVersion(txBcd));
+            }
+            else
+            {
+                _lblDetected.ForeColor = SystemColors.GrayText;
+                _lblDetected.Text = "未検出: 書き込む Pico 2 H を1台だけPCにUSB接続してください（既に別ソフトが入っている場合はBOOTSELを押しながら接続）。";
+            }
+        }
+
+        private void SetControlsBusy(bool busy)
+        {
+            _flashing = busy;
+            _btnFlashTx.Enabled = !busy;
+            _btnFlashRx.Enabled = !busy;
+            _btnBrowseTx.Enabled = !busy;
+            _btnBrowseRx.Enabled = !busy;
+            _txtTxPath.Enabled = !busy;
+            _txtRxPath.Enabled = !busy;
+            _btnOpenLatestRelease.Enabled = !busy;
+            _btnClose.Enabled = !busy;
+            Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+        }
+
+        private void ExecuteFlash(bool isTxTarget)
+        {
+            string uf2Path = (isTxTarget ? _txtTxPath.Text : _txtRxPath.Text).Trim();
+            int blocks;
+            string uf2Err;
+            if (!Uf2FlashHelper.ValidateRp2350Uf2File(uf2Path, out blocks, out uf2Err))
+            {
+                MessageBox.Show(this, uf2Err + "\r\n\r\n対象ファイル: " + uf2Path, "UF2ファイル確認エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            Uf2FlashHelper.BootselScanResult scan = Uf2FlashHelper.ScanBootselDrives();
+            if (scan.Rp2350Drives.Count > 1)
+            {
+                MessageBox.Show(this, "複数の Pico 2 (RP2350) ドライブが接続されています。\r\n誤書き込みを防ぐため、書き込む1台だけをPCに接続してください。", "複数台接続", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (scan.Rp2350Drives.Count == 0 && scan.Rp2040Drives.Count > 0)
+            {
+                MessageBox.Show(this, "初代 Raspberry Pi Pico (RP2040) が接続されています。\r\n本機には『Raspberry Pi Pico 2 H (RP2350)』が必要です。", "非対応ボード", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            string targetDrive = scan.Rp2350Drives.Count == 1 ? scan.Rp2350Drives[0] : null;
+            ushort triggerPid = 0;
+            if (targetDrive == null)
+            {
+                ushort rxBcd, txBcd;
+                bool hasRx = HidDeviceConnection.TryProbeDeviceBcd(_vid, _mixerPid, out rxBcd);
+                bool hasTx = (_bridgePid != 0) && HidDeviceConnection.TryProbeDeviceBcd(_vid, _bridgePid, out txBcd);
+                if (hasRx && hasTx)
+                {
+                    MessageBox.Show(this, "Switch 2側 (TX) と PC側 (RX) の両方が同時にPCへ接続されています。\r\n書き込む1台だけをPCに繋いでから実行してください。", "複数台接続", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (!hasRx && !hasTx)
+                {
+                    MessageBox.Show(
+                        this,
+                        "書き込み対象の Pico 2 H が見つかりません。\r\n\r\n" +
+                        "・新品の Pico 2 H：そのままUSBケーブルでPCに接続してください。\r\n" +
+                        "・別のプログラムが入っている場合：基板の白い『BOOTSEL』ボタンを押しながらUSB接続してください。",
+                        "Pico未検出",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (hasRx && isTxTarget)
+                {
+                    DialogResult confirm = MessageBox.Show(
+                        this,
+                        "現在PCに接続されているのは『PC・ヘッドホン側 (RX)』として動作中のPicoですが、\r\n" +
+                        "『Switch 2側 (TX)』用のファームウェアで上書きしようとしています。\r\n\r\n本当に上書きしますか？",
+                        "役割違いの確認",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning,
+                        MessageBoxDefaultButton.Button2);
+                    if (confirm != DialogResult.Yes) return;
+                }
+                else if (hasTx && !isTxTarget)
+                {
+                    DialogResult confirm = MessageBox.Show(
+                        this,
+                        "現在PCに接続されているのは『Switch 2側 (TX)』として動作中のPicoですが、\r\n" +
+                        "『PC・ヘッドホン側 (RX)』用のファームウェアで上書きしようとしています。\r\n\r\n本当に上書きしますか？",
+                        "役割違いの確認",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning,
+                        MessageBoxDefaultButton.Button2);
+                    if (confirm != DialogResult.Yes) return;
+                }
+
+                triggerPid = hasRx ? _mixerPid : _bridgePid;
+            }
+
+            SetControlsBusy(true);
+            try
+            {
+                if (_releaseMainHidCallback != null)
+                {
+                    try { _releaseMainHidCallback(); } catch { }
+                }
+
+                MixerStatus savedRxStatus = null;
+                float savedRxPreamp = 1.0f;
+                float[][] savedRxCoeffs = null;
+                bool hasSavedRxEq = false;
+
+                if (targetDrive == null)
+                {
+                    if (!isTxTarget && triggerPid == _mixerPid)
+                    {
+                        try
+                        {
+                            using (HidDeviceConnection snapHid = new HidDeviceConnection(_vid, _mixerPid))
+                            {
+                                savedRxStatus = snapHid.ReadFullStatus();
+                                hasSavedRxEq = snapHid.TryReadDeviceEq(out savedRxPreamp, out savedRxCoeffs);
+                            }
+                        }
+                        catch
+                        {
+                            savedRxStatus = null;
+                        }
+                    }
+
+                    _lblProgress.ForeColor = SystemColors.ControlText;
+                    _lblProgress.Text = "PicoをBOOTSEL書込モードへ切り替えています...";
+                    Application.DoEvents();
+                    HidDeviceConnection.SendBootselCommand(_vid, triggerPid);
+
+                    Stopwatch sw = Stopwatch.StartNew();
+                    while (sw.ElapsedMilliseconds < 8500)
+                    {
+                        Thread.Sleep(250);
+                        Application.DoEvents();
+                        Uf2FlashHelper.BootselScanResult waitScan = Uf2FlashHelper.ScanBootselDrives();
+                        if (waitScan.Rp2350Drives.Count > 1)
+                        {
+                            throw new IOException("複数のRP2350ドライブが検出されたため安全のため中断しました。");
+                        }
+                        if (waitScan.Rp2350Drives.Count == 1)
+                        {
+                            targetDrive = waitScan.Rp2350Drives[0];
+                            break;
+                        }
+                    }
+                    if (targetDrive == null)
+                    {
+                        throw new IOException("BOOTSELドライブ (RP2350) の出現を確認できませんでした。基板の白いBOOTSELボタンを押しながらUSBを挿し直してお試しください。");
+                    }
+                }
+
+                string destFile = Path.Combine(targetDrive, Path.GetFileName(uf2Path));
+                _lblProgress.ForeColor = SystemColors.ControlText;
+                _lblProgress.Text = string.Format("ファームウェアを書き込んでいます ({0} ブロック -> {1})...", blocks, targetDrive);
+                Application.DoEvents();
+
+                File.Copy(uf2Path, destFile, true);
+
+                // Wait briefly for RP2350 bootrom to finish flashing and auto-unmount the drive
+                Stopwatch unmountSw = Stopwatch.StartNew();
+                while (unmountSw.ElapsedMilliseconds < 5000)
+                {
+                    Thread.Sleep(250);
+                    Application.DoEvents();
+                    if (!Directory.Exists(targetDrive)) break;
+                }
+
+                if (!isTxTarget && savedRxStatus != null)
+                {
+                    bool hadCustomLive =
+                        Math.Abs(savedRxStatus.MasterDb - (-45.0)) > 0.05 ||
+                        Math.Abs(savedRxStatus.GameDb) > 0.05 ||
+                        Math.Abs(savedRxStatus.PcTrimDb) > 0.05 ||
+                        savedRxStatus.EqEnabled ||
+                        savedRxStatus.UserMuteMask != 0 ||
+                        (hasSavedRxEq && !EqDspMath.AreAllCoeffsFlat(savedRxPreamp, savedRxCoeffs));
+
+                    if (savedRxStatus.FlashConfigLoaded || hadCustomLive)
+                    {
+                        _lblProgress.ForeColor = SystemColors.ControlText;
+                        _lblProgress.Text = "再起動と設定の引き継ぎを確認しています...";
+                        Application.DoEvents();
+
+                        Stopwatch reenumSw = Stopwatch.StartNew();
+                        while (reenumSw.ElapsedMilliseconds < 6500)
+                        {
+                            Thread.Sleep(250);
+                            Application.DoEvents();
+                            try
+                            {
+                                using (HidDeviceConnection postHid = new HidDeviceConnection(_vid, _mixerPid))
+                                {
+                                    MixerStatus postStatus = postHid.ReadFullStatus();
+                                    if (!postStatus.FlashConfigLoaded)
+                                    {
+                                        if (hasSavedRxEq)
+                                        {
+                                            postHid.WriteRawEqCoeffs(savedRxPreamp, savedRxCoeffs);
+                                        }
+                                        postHid.WriteParams(
+                                            savedRxStatus.EqEnabled,
+                                            savedRxStatus.GameDb,
+                                            savedRxStatus.MasterDb,
+                                            savedRxStatus.PcTrimDb,
+                                            savedRxStatus.UartRxPinMode,
+                                            savedRxStatus.UserMuteMask);
+                                        if (savedRxStatus.FlashConfigLoaded)
+                                        {
+                                            postHid.SaveToFlash();
+                                        }
+                                    }
+                                    else
+                                    {
+                                        bool ramDiffers =
+                                            Math.Abs(postStatus.MasterDb - savedRxStatus.MasterDb) > 0.05 ||
+                                            Math.Abs(postStatus.GameDb - savedRxStatus.GameDb) > 0.05 ||
+                                            Math.Abs(postStatus.PcTrimDb - savedRxStatus.PcTrimDb) > 0.05 ||
+                                            postStatus.EqEnabled != savedRxStatus.EqEnabled ||
+                                            postStatus.UserMuteMask != savedRxStatus.UserMuteMask;
+                                        if (ramDiffers)
+                                        {
+                                            if (hasSavedRxEq)
+                                            {
+                                                postHid.WriteRawEqCoeffs(savedRxPreamp, savedRxCoeffs);
+                                            }
+                                            postHid.WriteParams(
+                                                savedRxStatus.EqEnabled,
+                                                savedRxStatus.GameDb,
+                                                savedRxStatus.MasterDb,
+                                                savedRxStatus.PcTrimDb,
+                                                savedRxStatus.UartRxPinMode,
+                                                savedRxStatus.UserMuteMask);
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+
+                _lblProgress.ForeColor = Color.FromArgb(16, 108, 48);
+                string roleDone = isTxTarget
+                    ? "Switch 2側 (TX) の書き込みが完了しました！PCから外して Switch 2 ドック側へ接続できます。"
+                    : "PC・ヘッドホン側 (RX) の書き込みが完了しました！自動的にミキサーとして認識されます。";
+                _lblProgress.Text = roleDone;
+                MessageBox.Show(this, roleDone, "書き込み完了", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                _lblProgress.ForeColor = Color.FromArgb(168, 20, 20);
+                _lblProgress.Text = "エラー: " + ex.Message;
+                MessageBox.Show(this, "ファームウェアの書き込みに失敗しました:\r\n" + ex.Message, "書き込みエラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                SetControlsBusy(false);
+                RefreshDetectionUi();
+            }
+        }
+    }
+
     internal sealed class HelpGuideForm : Form
     {
         private sealed class HelpTopic
@@ -3199,7 +4433,7 @@ namespace BiwamasuMixerGui
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(UiScale.Px(740), UiScale.Px(500));
+            ClientSize = new Size(UiScale.Px(776), UiScale.Px(510));
 
             _topics = BuildTopics();
 
@@ -3207,7 +4441,7 @@ namespace BiwamasuMixerGui
             root.Dock = DockStyle.Fill;
             root.Padding = UiScale.Pad(12, 10, 12, 10);
             root.ColumnCount = 2;
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(226f)));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(262f)));
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             root.RowCount = 2;
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -3323,7 +4557,7 @@ namespace BiwamasuMixerGui
                     "■ Switch 2: 受信中 / 待機中\r\n" +
                     "Switch 2 側のマイコン（Pico①）から 3Mbps デジタル音声データが届いているかを示します。\r\n" +
                     "・受信中：正常にデジタル音声リンクが確立しています。\r\n" +
-                    "・待機中：Switch 2 がスリープ中・未接続、または Switch 2 側の出力先が「Biwamasu Mixer TX」になっていない、もしくはブレッドボード配線（GP0→33Ω→GP13、GND共通線）が抜けています。\r\n\r\n" +
+                    "・待機中：Switch 2 がスリープ中・未接続、または Switch 2 側の出力先が「Biwamasu Mixer TX」になっていない、もしくは Pico①〜Omnibus 間のジャンパ配線（GP0→GP1、GND）が抜けています。\r\n\r\n" +
                     "■ OBS: 動作中 / 待機中\r\n" +
                     "OBS Studio 等の録音・配信ソフトが「ライン (Biwamasu Mixer)」を開いて音声を取り込んでいるときに「動作中」になります。\r\n\r\n" +
                     "■ [音割れ検知] 表示\r\n" +
@@ -3332,25 +4566,19 @@ namespace BiwamasuMixerGui
                     "通常は2秒おきに自動更新されますが、ボタンを押すと即座にマイコンの現在値を読み直します。"),
 
                 new HelpTopic(
-                    "3. 音量バランスと赤色ゾーン",
-                    "■ マスター音量（-60.0 〜 +6.0 dB / 初期値 -45.0 dB）\r\n" +
+                    "3. 音量バランスとミュート・注意ゾーン",
+                    "■ マスター音量（-80.0 〜 +6.0 dB / 初期値 -45.0 dB）\r\n" +
                     "ヘッドホン端子から出力される最終的な全体音量です（Switch 2音・PC音の両方に効きます）。\r\n" +
-                    "スライダーをダブルクリックすると安全な初期値（-45.0 dB）に戻ります。\r\n\r\n" +
-                    "■ Switch 2 補正（-60.0 〜 +12.0 dB / 初期値 0.0 dB）\r\n" +
-                    "Switch 2 のゲーム音だけの音量を前後させます。スライダーをダブルクリックすると 0.0 dB に戻ります。\r\n" +
-                    "（※OBS録音用のライン入力には影響せず、OBSへは常に劣化なしの生音がそのまま送られます）\r\n\r\n" +
-                    "■ PC 音量補正（-24.0 〜 +12.0 dB / 初期値 0.0 dB）\r\n" +
-                    "PC側の音（Discordや動画など）の基準音量を前後させます（ダブルクリックで 0.0 dB）。\r\n" +
-                    "普段のPC音量の上げ下げは、Windows右下の標準音量スライダーでもそのまま操作できます。\r\n\r\n" +
-                    "■ スライダーの赤色ゾーン（合計 +0 dB 超過・非推奨）とは？\r\n" +
-                    "「マスター音量 ＋ Switch 2補正」または「マスター音量 ＋ PC音量補正」の合計が +0.0 dB を超える区間は、スライダーの溝が連動して赤く表示されます。\r\n" +
-                    "（例：マスター音量が -11 dB のときは補正 +11 dB 以上が赤、マスター音量が 0 dB のときは補正 0 dB 以上がすべて赤になります）\r\n\r\n" +
-                    "【なぜ赤色ゾーンが非推奨なのか？】\r\n" +
-                    "・デジタル音声の最大値（0 dBFS）を超えてプラス増幅するため、大きな効果音で天井にぶつかり「音割れ（クリッピング）」が発生します。\r\n" +
-                    "・微小な背景ノイズまで一緒に増幅されるため、S/N比が悪化（サーッというノイズが増加）します。\r\n\r\n" +
+                    "左端の -80.0 dB でも無音にはならず滑らかに絞れるため、高感度のイヤホンでも細かく調整できます。スライダーをダブルクリックすると安全な初期値（-45.0 dB）に戻ります。\r\n\r\n" +
+                    "■ Switch 2 補正 / PC 音量補正（どちらも -24.0 〜 +24.0 dB / 中央 0.0 dB）\r\n" +
+                    "真ん中の 0.0 dB を基準に、Switch 2 のゲーム音や PC の音（Discord・動画など）を左右へバランス調整します（ダブルクリックで 0.0 dB に戻ります）。\r\n" +
+                    "（※Switch 2 補正やミュートはヘッドホン出力にのみ効き、OBS録音用のライン入力へは常に劣化なしの生音が送られます）\r\n\r\n" +
+                    "■ 各行の [ミュート] チェック\r\n" +
+                    "マスター・Switch 2・PC の3系統をそれぞれワンクリックで一時消音できます（マスターをミュートにすると音量バランス全体がグレーアウトします）。電源を入れ直した際の「音が出ない！」事故を防ぐため、ミュート状態は本体メモリには保存されず再起動時に自動で解除されます。\r\n\r\n" +
+                    "■ スライダーの黄色ゾーン（合計 +0 dB 超過の注意表示）とは？\r\n" +
+                    "「マスター音量 ＋ Switch 2補正」または「マスター音量 ＋ PC音量補正」の合計が +0.0 dB を超える区間は、スライダーが黄色で表示され、ステータスバーに音割れ注意が表示されます（実際に音割れが発生したときだけステータスバーが赤色の警告へ切り替わります）。\r\n\r\n" +
                     "【音量が足りないときの正しい対処法】\r\n" +
-                    "バランス調整は「大きすぎる方をマイナスに下げる」形で行い、合計 0 dB 以下を保ってください。\r\n" +
-                    "マスター音量を 0 dB まで上げてもヘッドホンの音量が小さい場合は、デジタルでプラス増幅するのではなく、いったんヘッドホンを耳から外してマスター音量を下げてから、Pico Audio Pack 基板上にある小さなスイッチを「LO GAIN」から「HI GAIN」へ切り替えて再調整してください。"),
+                    "マスター音量を 0 dB まで上げてもヘッドホンの音量が小さい場合は、デジタルで大きくプラス増幅するのではなく、いったんヘッドホンを耳から外してマスター音量を下げてから、Pico Audio Pack 基板上にある小さなスイッチを「LO GAIN」から「HI GAIN」へ切り替えて再調整してください。"),
 
                 new HelpTopic(
                     "4. イコライザー欄と下部ボタン",
@@ -3439,8 +4667,10 @@ namespace BiwamasuMixerGui
                     "Windows標準のサウンドコントロールパネル（mmsys.cpl）を開きます。\r\n" +
                     "・再生タブ：「ヘッドホン (Biwamasu Mixer)」を既定のデバイスに設定します。\r\n" +
                     "・録音タブ：OBSで取り込む「ライン (Biwamasu Mixer)」のレベルが「100」（0.0 dB 等倍）、かつ「オーディオの強化」がオフになっているか確認できます。\r\n\r\n" +
-                    "■ ツール → BOOTSELモードへ切替\r\n" +
-                    "基板の白いボタンを押さずに、PC側の Pico② をファームウェア更新モード（USBドライブが開く状態）へ切り替えます。新しい biwamasu-mixer-rx.uf2 を書き込むとき以外は使わなくて大丈夫です。\r\n\r\n" +
+                    "■ 更新・書込 → Picoへファームウェアを書き込む（初回組立・更新）\r\n" +
+                    "メイン画面の [Pico書込ツール (組立・更新)] ボタン（または上部「更新・書込」メニュー）から開けます。初回組立時に2台の新品 Pico 2 H へ Switch 2側 (TX) / PC側 (RX) のファームウェアを迷わず書き込んだり、アップデート時に白いBOOTSELボタンを押さずにワンクリックで更新できます。\r\n\r\n" +
+                    "■ 更新・書込 → 最新バージョンを確認 / このソフトを開いた時、更新があれば通知する\r\n" +
+                    "このソフトを開いたとき（最大1日1回・PC常駐やタスク登録は一切なし）、GitHubに新しいバージョンが公開されていれば画面上で控えめに通知します。通信したくない場合はメイン画面またはメニューのチェックを外すだけで完全にオフになります。\r\n\r\n" +
                     "■ よくある質問・トラブル対処\r\n" +
                     "Q. 片耳からしか音が出ない／音がすごく遠い\r\n" +
                     "A. 新品の Pico Audio Pack のイヤホン穴は少し硬めです。プラグの根元まで「カチッ」と奥まで差し込まれているか確認してください。また、隣の「LINE OUT」ではなく「PHONES」と書いてある方の穴に挿してください。\r\n\r\n" +
@@ -3584,18 +4814,7 @@ namespace BiwamasuMixerGui
             sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "# GameDb: {0:0.0}", preset.GameDb));
             sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "# PcTrimDb: {0:0.0}", preset.PcTrimDb));
             sb.AppendLine("# EqEnabled: " + (preset.EqEnabled ? "1" : "0"));
-            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "Preamp: {0:0.0} dB", eq.PreampDb));
-            for (int i = 0; i < 11; i++)
-            {
-                EqBandSpec b = eq.Bands[i];
-                string state = b.Enabled ? "ON" : "OFF";
-                string kind = b.Kind == FilterKind.PK ? "PK" : (b.Kind == FilterKind.LSC ? "LSC" : "HSC");
-                string fcStr = EqDspMath.FormatFrequencyClean(b.FrequencyHz);
-                sb.AppendLine(string.Format(
-                    CultureInfo.InvariantCulture,
-                    "Filter {0}: {1} {2} Fc {3} Hz Gain {4:0.0} dB Q {5:0.00}",
-                    i + 1, state, kind, fcStr, b.GainDb, b.Q));
-            }
+            EqDspMath.AppendPeaceBodyLines(sb, eq);
 
             File.WriteAllText(targetPath, sb.ToString(), new UTF8Encoding(false));
             preset.Name = cleanName;
@@ -3670,17 +4889,17 @@ namespace BiwamasuMixerGui
                 else if (string.Equals(k, "MasterDb", StringComparison.OrdinalIgnoreCase) &&
                          EqDspMath.TryParseStrictNumber(v, out dv))
                 {
-                    fp.MasterDb = EqDspMath.Clamp(dv, -60.0, 6.0);
+                    fp.MasterDb = EqDspMath.Clamp(dv, -80.0, 6.0);
                 }
                 else if (string.Equals(k, "GameDb", StringComparison.OrdinalIgnoreCase) &&
                          EqDspMath.TryParseStrictNumber(v, out dv))
                 {
-                    fp.GameDb = EqDspMath.Clamp(dv, -60.0, 12.0);
+                    fp.GameDb = EqDspMath.Clamp(dv, -24.0, 24.0);
                 }
                 else if (string.Equals(k, "PcTrimDb", StringComparison.OrdinalIgnoreCase) &&
                          EqDspMath.TryParseStrictNumber(v, out dv))
                 {
-                    fp.PcTrimDb = EqDspMath.Clamp(dv, -24.0, 12.0);
+                    fp.PcTrimDb = EqDspMath.Clamp(dv, -24.0, 24.0);
                 }
                 else if (string.Equals(k, "EqEnabled", StringComparison.OrdinalIgnoreCase))
                 {
@@ -3691,6 +4910,79 @@ namespace BiwamasuMixerGui
             fp.Eq = EqDspMath.ParsePeaceText(raw, fp.Name);
             fp.Eq.SourceLabel = fp.Name;
             return fp;
+        }
+    }
+
+    internal static class EqUiHelpers
+    {
+        public static void HandleEqDragEnter(DragEventArgs e)
+        {
+            if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.UnicodeText))
+            {
+                e.Effect = DragDropEffects.Copy;
+            }
+            else
+            {
+                e.Effect = DragDropEffects.None;
+            }
+        }
+
+        public static void ConfigureOpenEqDialog(OpenFileDialog dlg, string initialDir)
+        {
+            dlg.Title = "EQ設定ファイルを開く (.peace / .txt)";
+            dlg.Filter = "Peace / Equalizer APO 設定 (*.peace;*.txt)|*.peace;*.txt|すべてのファイル (*.*)|*.*";
+            if (!string.IsNullOrEmpty(initialDir) && Directory.Exists(initialDir))
+            {
+                dlg.InitialDirectory = initialDir;
+            }
+        }
+
+        public static void ConfigureSaveEqDialog(SaveFileDialog dlg)
+        {
+            dlg.Title = "EQ設定をファイルに保存";
+            dlg.Filter = "Equalizer APO テキスト (*.txt)|*.txt";
+            dlg.FileName = "my-biwamasu-eq.txt";
+        }
+
+        public static bool TryReadDroppedEqProfile(DragEventArgs e, out EqProfile profile, out string droppedDir)
+        {
+            profile = null;
+            droppedDir = null;
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                string[] files = e.Data.GetData(DataFormats.FileDrop) as string[];
+                if (files != null && files.Length > 0)
+                {
+                    droppedDir = Path.GetDirectoryName(files[0]);
+                    profile = EqDspMath.ParsePeaceFile(files[0]);
+                    return true;
+                }
+            }
+            if (e.Data.GetDataPresent(DataFormats.UnicodeText))
+            {
+                string txt = e.Data.GetData(DataFormats.UnicodeText) as string;
+                if (!string.IsNullOrEmpty(txt))
+                {
+                    profile = EqDspMath.ParsePeaceText(txt, "AI・テキスト貼付");
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public static bool TryParseClipboardEqProfile(out EqProfile profile)
+        {
+            profile = null;
+            try
+            {
+                if (Clipboard.ContainsText())
+                {
+                    profile = EqDspMath.ParsePeaceText(Clipboard.GetText(), "AI・テキスト貼付");
+                    return profile != null;
+                }
+            }
+            catch { }
+            return false;
         }
     }
 
@@ -3723,7 +5015,7 @@ namespace BiwamasuMixerGui
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(UiScale.Px(620), UiScale.Px(476));
+            ClientSize = new Size(UiScale.Px(688), UiScale.Px(492));
 
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
@@ -3741,7 +5033,7 @@ namespace BiwamasuMixerGui
             grpPrompt.Dock = DockStyle.Fill;
             grpPrompt.AutoSize = true;
             grpPrompt.Margin = UiScale.Pad(0, 0, 0, 8);
-            grpPrompt.Padding = UiScale.Pad(10, 6, 10, 8);
+            grpPrompt.Padding = UiScale.Pad(10, 6, 10, 10);
 
             TableLayoutPanel pGrid = new TableLayoutPanel();
             pGrid.Dock = DockStyle.Fill;
@@ -3750,6 +5042,9 @@ namespace BiwamasuMixerGui
             pGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(156f)));
             pGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             pGrid.RowCount = 3;
+            pGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             Label lblDev = new Label();
             lblDev.Text = "使用機種名 (任意):";
@@ -3777,16 +5072,20 @@ namespace BiwamasuMixerGui
             copyRow.ColumnCount = 2;
             copyRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             copyRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            copyRow.RowCount = 1;
+            copyRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             copyRow.Margin = UiScale.Pad(0, 2, 0, 0);
 
             _lblCopyInfo = new Label();
             _lblCopyInfo.Text = "※空欄のままコピーして ChatGPT / Claude / Gemini 側で書き足してもOKです";
             _lblCopyInfo.ForeColor = SystemColors.ControlDarkDark;
             _lblCopyInfo.AutoSize = true;
+            _lblCopyInfo.MaximumSize = new Size(UiScale.Px(442), 0);
             _lblCopyInfo.Anchor = AnchorStyles.Left;
-            _lblCopyInfo.Margin = new Padding(0);
+            _lblCopyInfo.Margin = UiScale.Pad(0, 2, 8, 2);
 
-            Button btnCopyPrompt = UiScale.CreateButton("AIへの依頼文をコピー(&C)", 172, 26);
+            Button btnCopyPrompt = UiScale.CreateButton("AIへの依頼文をコピー(&C)", 184, 27);
+            btnCopyPrompt.Anchor = AnchorStyles.Right;
             btnCopyPrompt.Margin = new Padding(0);
             btnCopyPrompt.Click += OnCopyPromptClick;
 
@@ -3830,7 +5129,7 @@ namespace BiwamasuMixerGui
             lblPasteHint.Anchor = AnchorStyles.Left;
             lblPasteHint.Margin = new Padding(0);
 
-            Button btnPasteClip = UiScale.CreateButton("クリップボードから貼付(&V)", 168, 25);
+            Button btnPasteClip = UiScale.CreateButton("クリップボードから貼付(&V)", 182, 26);
             btnPasteClip.Margin = new Padding(0);
             btnPasteClip.Click += OnPasteClipboardClick;
 
@@ -3859,7 +5158,7 @@ namespace BiwamasuMixerGui
             bottomBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             bottomBar.Margin = new Padding(0);
 
-            Button btnHelp = UiScale.CreateButton("ヘルプ(&H)...", 96, 27);
+            Button btnHelp = UiScale.CreateButton("ヘルプ(&H)...", 104, 28);
             btnHelp.Margin = new Padding(0);
             btnHelp.Click += delegate
             {
@@ -3876,11 +5175,11 @@ namespace BiwamasuMixerGui
             rightBtns.WrapContents = false;
             rightBtns.Margin = new Padding(0);
 
-            Button btnCancel = UiScale.CreateButton("キャンセル", 92, 27);
+            Button btnCancel = UiScale.CreateButton("キャンセル", 96, 28);
             btnCancel.Margin = UiScale.Pad(6, 0, 0, 0);
             btnCancel.DialogResult = DialogResult.Cancel;
 
-            Button btnImport = UiScale.CreateButton("読み込んで適用", 128, 27);
+            Button btnImport = UiScale.CreateButton("読み込んで適用", 136, 28);
             btnImport.Margin = new Padding(0);
             btnImport.Click += OnImportClick;
 
@@ -3982,14 +5281,7 @@ namespace BiwamasuMixerGui
 
         private void OnFormDragEnter(object sender, DragEventArgs e)
         {
-            if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.UnicodeText))
-            {
-                e.Effect = DragDropEffects.Copy;
-            }
-            else
-            {
-                e.Effect = DragDropEffects.None;
-            }
+            EqUiHelpers.HandleEqDragEnter(e);
         }
 
         private void OnFormDragDrop(object sender, DragEventArgs e)
@@ -4049,7 +5341,7 @@ namespace BiwamasuMixerGui
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(UiScale.Px(430), UiScale.Px(148));
+            ClientSize = new Size(UiScale.Px(464), UiScale.Px(168));
 
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
@@ -4065,6 +5357,7 @@ namespace BiwamasuMixerGui
             Label lbl = new Label();
             lbl.Text = promptLabel;
             lbl.AutoSize = true;
+            lbl.MaximumSize = new Size(UiScale.Px(436), 0);
             lbl.Margin = UiScale.Pad(0, 0, 0, 4);
 
             _txtName = new TextBox();
@@ -4077,6 +5370,7 @@ namespace BiwamasuMixerGui
             lblSub.Text = detailSummary ?? "";
             lblSub.ForeColor = SystemColors.ControlDarkDark;
             lblSub.AutoSize = true;
+            lblSub.MaximumSize = new Size(UiScale.Px(436), 0);
             lblSub.Margin = new Padding(0);
 
             FlowLayoutPanel btns = new FlowLayoutPanel();
@@ -4148,7 +5442,7 @@ namespace BiwamasuMixerGui
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(UiScale.Px(560), UiScale.Px(330));
+            ClientSize = new Size(UiScale.Px(612), UiScale.Px(352));
 
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
@@ -4174,23 +5468,23 @@ namespace BiwamasuMixerGui
             sideBtns.WrapContents = false;
             sideBtns.Margin = new Padding(0);
 
-            Button btnApply = UiScale.CreateButton("適用(&A)", 138, 27);
+            Button btnApply = UiScale.CreateButton("適用(&A)", 176, 28);
             btnApply.Margin = UiScale.Pad(0, 0, 0, 6);
             btnApply.Click += OnApplySelectedClick;
 
-            Button btnAdd = UiScale.CreateButton("現在値を新規追加(&N)...", 138, 27);
+            Button btnAdd = UiScale.CreateButton("現在値を新規追加(&N)...", 176, 28);
             btnAdd.Margin = UiScale.Pad(0, 0, 0, 6);
             btnAdd.Click += OnAddCurrentClick;
 
-            Button btnOverwrite = UiScale.CreateButton("現在値で上書き(&U)", 138, 27);
+            Button btnOverwrite = UiScale.CreateButton("現在値で上書き(&U)", 176, 28);
             btnOverwrite.Margin = UiScale.Pad(0, 0, 0, 6);
             btnOverwrite.Click += OnOverwriteSelectedClick;
 
-            Button btnRename = UiScale.CreateButton("名前変更(&R)...", 138, 27);
+            Button btnRename = UiScale.CreateButton("名前変更(&R)...", 176, 28);
             btnRename.Margin = UiScale.Pad(0, 0, 0, 6);
             btnRename.Click += OnRenameSelectedClick;
 
-            Button btnDelete = UiScale.CreateButton("削除(&D)", 138, 27);
+            Button btnDelete = UiScale.CreateButton("削除(&D)", 176, 28);
             btnDelete.Margin = new Padding(0);
             btnDelete.Click += OnDeleteSelectedClick;
 
@@ -4203,6 +5497,7 @@ namespace BiwamasuMixerGui
             _lblDetail = new Label();
             _lblDetail.ForeColor = SystemColors.ControlDarkDark;
             _lblDetail.AutoSize = true;
+            _lblDetail.MaximumSize = new Size(UiScale.Px(584), 0);
             _lblDetail.Margin = UiScale.Pad(0, 2, 0, 8);
 
             FlowLayoutPanel bottomBar = new FlowLayoutPanel();
@@ -4407,7 +5702,7 @@ namespace BiwamasuMixerGui
         private float[][] _initialHwCoeffs;
         private bool _hasRawHwRestore;
         private readonly EqProfile _working;
-        private readonly Action<EqProfile, bool, bool> _applyCallback;
+        private readonly Func<EqProfile, bool, bool, bool> _applyCallback;
         private readonly Action<float, float[][], EqProfile, bool> _restoreRawCallback;
         private readonly Icon _appIcon;
         private string _currentEqDir;
@@ -4435,7 +5730,7 @@ namespace BiwamasuMixerGui
             bool eqEnabled,
             string initialEqDir,
             Icon appIcon,
-            Action<EqProfile, bool, bool> applyCallback)
+            Func<EqProfile, bool, bool, bool> applyCallback)
             : this(current, eqEnabled, initialEqDir, appIcon, applyCallback, 1.0f, null, null)
         {
         }
@@ -4445,7 +5740,7 @@ namespace BiwamasuMixerGui
             bool eqEnabled,
             string initialEqDir,
             Icon appIcon,
-            Action<EqProfile, bool, bool> applyCallback,
+            Func<EqProfile, bool, bool, bool> applyCallback,
             float initialHwPreamp,
             float[][] initialHwCoeffs,
             Action<float, float[][], EqProfile, bool> restoreRawCallback)
@@ -4472,8 +5767,8 @@ namespace BiwamasuMixerGui
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            MinimumSize = new Size(UiScale.Px(680), UiScale.Px(420));
-            ClientSize = new Size(UiScale.Px(780), UiScale.Px(604));
+            MinimumSize = new Size(UiScale.Px(760), UiScale.Px(480));
+            ClientSize = new Size(UiScale.Px(824), UiScale.Px(724));
 
             _liveSendTimer = new System.Windows.Forms.Timer();
             _liveSendTimer.Interval = 45;
@@ -4539,11 +5834,11 @@ namespace BiwamasuMixerGui
             topRight0.Anchor = AnchorStyles.Right;
             topRight0.Margin = new Padding(0);
 
-            Button btnLoad = UiScale.CreateButton("ファイル読込(&L)...", 116, 25);
+            Button btnLoad = UiScale.CreateButton("ファイル読込(&L)...", 136, 26);
             btnLoad.Click += OnLoadPeaceClick;
-            Button btnPasteAi = UiScale.CreateButton("AI・テキスト貼付(&P)...", 138, 25);
+            Button btnPasteAi = UiScale.CreateButton("AI・テキスト貼付(&P)...", 168, 26);
             btnPasteAi.Click += OnOpenAiPasteClick;
-            Button btnExport = UiScale.CreateButton("ファイル保存(&S)...", 116, 25);
+            Button btnExport = UiScale.CreateButton("ファイル保存(&S)...", 136, 26);
             btnExport.Margin = UiScale.Pad(0, 2, 0, 2);
             btnExport.Click += OnExportPeaceClick;
             topRight0.Controls.Add(btnLoad);
@@ -4580,7 +5875,7 @@ namespace BiwamasuMixerGui
             lblPreUnit.AutoSize = true;
             lblPreUnit.Margin = UiScale.Pad(0, 5, 10, 0);
 
-            _btnAutoPreamp = UiScale.CreateButton("自動調整", 122, 25);
+            _btnAutoPreamp = UiScale.CreateButton("自動調整", 132, 26);
             _btnAutoPreamp.Margin = UiScale.Pad(0, 1, 0, 0);
             _btnAutoPreamp.Click += OnAutoPreampClick;
 
@@ -4614,7 +5909,7 @@ namespace BiwamasuMixerGui
             });
             _cmbTemplate.SelectedIndex = 0;
 
-            Button btnApplyTpl = UiScale.CreateButton("読込", 56, 25);
+            Button btnApplyTpl = UiScale.CreateButton("読込", 64, 26);
             btnApplyTpl.Margin = UiScale.Pad(0, 1, 0, 0);
             btnApplyTpl.Click += OnApplyTemplateClick;
 
@@ -4654,7 +5949,8 @@ namespace BiwamasuMixerGui
             grpBands.Padding = UiScale.Pad(10, 5, 10, 6);
 
             TableLayoutPanel grid = new TableLayoutPanel();
-            grid.Dock = DockStyle.Fill;
+            grid.Dock = DockStyle.Top;
+            grid.Height = UiScale.Px(354);
             grid.ColumnCount = 7;
             grid.RowCount = 12;
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(64f)));
@@ -4665,7 +5961,7 @@ namespace BiwamasuMixerGui
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(70f)));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(64f)));
 
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiScale.Pxf(22f)));
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiScale.Pxf(24f)));
             AddHeaderLabel(grid, "バンド", 0);
             AddHeaderLabel(grid, "有効", 1);
             AddHeaderLabel(grid, "種類", 2);
@@ -4676,7 +5972,7 @@ namespace BiwamasuMixerGui
 
             for (int i = 0; i < 11; i++)
             {
-                grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / 11f));
+                grid.RowStyles.Add(new RowStyle(SizeType.Absolute, UiScale.Pxf(30f)));
                 int row = i + 1;
                 int bandIdx = i;
 
@@ -4774,7 +6070,6 @@ namespace BiwamasuMixerGui
                 _rowQ[i] = txtQ;
                 grid.Controls.Add(txtQ, 6, row);
             }
-            grid.MinimumSize = new Size(0, UiScale.Px(308));
             Panel bandScroll = new Panel();
             bandScroll.Dock = DockStyle.Fill;
             bandScroll.AutoScroll = true;
@@ -4790,7 +6085,7 @@ namespace BiwamasuMixerGui
             bottomBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             bottomBar.Margin = new Padding(0);
 
-            Button btnHelp = UiScale.CreateButton("ヘルプ(&H)...", 92, 27);
+            Button btnHelp = UiScale.CreateButton("ヘルプ(&H)...", 102, 28);
             btnHelp.Margin = UiScale.Pad(0, 2, 0, 2);
             btnHelp.Click += delegate { OpenEqHelp(); };
 
@@ -4800,13 +6095,13 @@ namespace BiwamasuMixerGui
             bottomBtns.AutoSize = true;
             bottomBtns.Margin = new Padding(0);
 
-            Button btnApply = UiScale.CreateButton("適用(&A)", 88, 27);
+            Button btnApply = UiScale.CreateButton("適用(&A)", 92, 28);
             btnApply.Margin = UiScale.Pad(6, 2, 0, 2);
             btnApply.Click += OnApplyClick;
-            Button btnCancel = UiScale.CreateButton("キャンセル", 88, 27);
+            Button btnCancel = UiScale.CreateButton("キャンセル", 96, 28);
             btnCancel.Margin = UiScale.Pad(6, 2, 0, 2);
             btnCancel.DialogResult = DialogResult.Cancel;
-            Button btnOk = UiScale.CreateButton("OK", 88, 27);
+            Button btnOk = UiScale.CreateButton("OK", 92, 28);
             btnOk.Margin = UiScale.Pad(0, 2, 0, 2);
             btnOk.Click += OnOkClick;
 
@@ -5209,12 +6504,7 @@ namespace BiwamasuMixerGui
         {
             using (OpenFileDialog dlg = new OpenFileDialog())
             {
-                dlg.Title = "EQ設定ファイルを開く (.peace / .txt)";
-                dlg.Filter = "Peace / Equalizer APO 設定 (*.peace;*.txt)|*.peace;*.txt|すべてのファイル (*.*)|*.*";
-                if (!string.IsNullOrEmpty(_currentEqDir) && Directory.Exists(_currentEqDir))
-                {
-                    dlg.InitialDirectory = _currentEqDir;
-                }
+                EqUiHelpers.ConfigureOpenEqDialog(dlg, _currentEqDir);
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
                 try
@@ -5252,52 +6542,30 @@ namespace BiwamasuMixerGui
 
         private void TryPasteOrOpenAiDialog()
         {
-            try
+            EqProfile parsed;
+            if (EqUiHelpers.TryParseClipboardEqProfile(out parsed))
             {
-                if (Clipboard.ContainsText())
-                {
-                    EqProfile parsed = EqDspMath.ParsePeaceText(Clipboard.GetText(), "AI・テキスト貼付");
-                    ApplyLoadedProfileToEditor(parsed);
-                    return;
-                }
+                ApplyLoadedProfileToEditor(parsed);
+                return;
             }
-            catch { }
             OnOpenAiPasteClick(this, EventArgs.Empty);
         }
 
         private void OnEqDragEnter(object sender, DragEventArgs e)
         {
-            if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.UnicodeText))
-            {
-                e.Effect = DragDropEffects.Copy;
-            }
-            else
-            {
-                e.Effect = DragDropEffects.None;
-            }
+            EqUiHelpers.HandleEqDragEnter(e);
         }
 
         private void OnEqDragDrop(object sender, DragEventArgs e)
         {
             try
             {
-                if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                EqProfile dropped;
+                string droppedDir;
+                if (EqUiHelpers.TryReadDroppedEqProfile(e, out dropped, out droppedDir))
                 {
-                    string[] files = e.Data.GetData(DataFormats.FileDrop) as string[];
-                    if (files != null && files.Length > 0)
-                    {
-                        _currentEqDir = Path.GetDirectoryName(files[0]);
-                        ApplyLoadedProfileToEditor(EqDspMath.ParsePeaceFile(files[0]));
-                        return;
-                    }
-                }
-                if (e.Data.GetDataPresent(DataFormats.UnicodeText))
-                {
-                    string txt = e.Data.GetData(DataFormats.UnicodeText) as string;
-                    if (!string.IsNullOrEmpty(txt))
-                    {
-                        ApplyLoadedProfileToEditor(EqDspMath.ParsePeaceText(txt, "AI・テキスト貼付"));
-                    }
+                    if (!string.IsNullOrEmpty(droppedDir)) _currentEqDir = droppedDir;
+                    ApplyLoadedProfileToEditor(dropped);
                 }
             }
             catch (Exception ex)
@@ -5312,9 +6580,7 @@ namespace BiwamasuMixerGui
 
             using (SaveFileDialog dlg = new SaveFileDialog())
             {
-                dlg.Title = "EQ設定をファイルに保存";
-                dlg.Filter = "Equalizer APO テキスト (*.txt)|*.txt";
-                dlg.FileName = "my-biwamasu-eq.txt";
+                EqUiHelpers.ConfigureSaveEqDialog(dlg);
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
                 try
@@ -5333,9 +6599,8 @@ namespace BiwamasuMixerGui
         {
             if (!CommitAndValidateWithDialog()) return;
             _liveSendTimer.Stop();
-            if (_applyCallback != null)
+            if (_applyCallback != null && _applyCallback(_working.Clone(), _chkEqEnable.Checked, true))
             {
-                _applyCallback(_working.Clone(), _chkEqEnable.Checked, true);
                 CopyProfile(_working, _initialSnapshot);
                 _initialEqEnabled = _chkEqEnable.Checked;
                 _hasRawHwRestore = false;
@@ -5366,6 +6631,12 @@ namespace BiwamasuMixerGui
 
     internal sealed class MainForm : Form
     {
+        internal const string WindowTitle = "Biwamasu-Mixer Setting tool";
+
+        private readonly ushort _usbVid;
+        private readonly ushort _bridgePid;
+        private readonly ushort _mixerPid;
+        private readonly bool _enableStartupUpdateCheck;
         private readonly HidDeviceConnection _hid;
         private readonly string _appBaseDir;
         private readonly string _localEqCachePath;
@@ -5374,17 +6645,30 @@ namespace BiwamasuMixerGui
 
         private readonly Label _lblConnState;
         private readonly Label _lblSignalDetail;
+        private readonly Label _lblMasterTitle;
         private readonly GainSlider _sldMaster;
         private readonly NumericUpDown _numMaster;
+        private readonly Label _lblMasterUnit;
+        private readonly CheckBox _chkMuteMaster;
+        private readonly Label _lblGameTitle;
         private readonly GainSlider _sldGame;
         private readonly NumericUpDown _numGame;
+        private readonly Label _lblGameUnit;
+        private readonly CheckBox _chkMuteGame;
+        private readonly Label _lblPcTitle;
         private readonly GainSlider _sldPc;
         private readonly NumericUpDown _numPc;
+        private readonly Label _lblPcUnit;
+        private readonly CheckBox _chkMutePc;
         private readonly CheckBox _chkEq;
         private readonly Label _lblEqSummary;
         private readonly Button _btnTestTone;
         private readonly Button _btnSaveFlash;
+        private readonly Button _btnCheckUpdateMain;
+        private readonly CheckBox _chkAutoUpdateMain;
         private readonly ToolStripStatusLabel _statusText;
+        private readonly ToolStripStatusLabel _updateLink;
+        private ToolStripMenuItem _miAutoUpdateCheck;
         private readonly System.Windows.Forms.Timer _pollTimer;
         private readonly System.Windows.Forms.Timer _sendDebounceTimer;
 
@@ -5399,14 +6683,40 @@ namespace BiwamasuMixerGui
         private bool _userDraggingSlider;
         private bool _pendingParamSend;
         private bool _deviceConnected;
+        private ushort _connectedFwBcd;
+        private ushort _connectedTxFwBcd;
         private bool _testToneActive;
         private bool _hasUnsavedChanges;
-        private byte _lastRxPinMode = 13;
+        private byte _lastRxPinMode = 1;
         private float _lastHwPreampLin = 1.0f;
         private float[][] _lastHwCoeffs;
 
+        private bool _checkUpdatesOnStartup = true;
+        private long _lastUpdateCheckTicks;
+        private string _latestKnownTag;
+        private ReleaseVersionTargets _latestKnownTargets;
+        private string _latestReleaseUrl = ReleaseUpdateChecker.ReleasesPageUrl;
+        private bool _manualUpdateCheckBusy;
+        private bool _syncingAutoUpdateUi;
+
         public MainForm(ushort vid, ushort pid)
+            : this(vid, pid, 0, false)
         {
+        }
+
+        public MainForm(ushort vid, ushort pid, ushort bridgePid, bool enableStartupUpdateCheck)
+        {
+            _usbVid = vid;
+            _mixerPid = pid;
+            _bridgePid = bridgePid;
+            _enableStartupUpdateCheck = enableStartupUpdateCheck;
+            ReleaseUpdateChecker.LoadPrefs(
+                out _checkUpdatesOnStartup,
+                out _lastUpdateCheckTicks,
+                out _latestKnownTag,
+                out _latestKnownTargets,
+                out _latestReleaseUrl);
+
             _hid = new HidDeviceConnection(vid, pid);
             _appBaseDir = AppDomain.CurrentDomain.BaseDirectory;
             _localEqCachePath = Path.Combine(
@@ -5421,13 +6731,13 @@ namespace BiwamasuMixerGui
             AutoScaleMode = AutoScaleMode.None;
             Font = UiScale.CreateUiFont();
             if (_appIcon != null) Icon = _appIcon;
-            Text = "Biwamasu-Mixer Setting tool";
+            Text = WindowTitle;
             KeyPreview = true;
             AllowDrop = true;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(UiScale.Px(596), UiScale.Px(440));
+            ClientSize = new Size(UiScale.Px(668), UiScale.Px(552));
 
             MenuStrip menu = BuildMenuStrip();
             menu.Font = Font;
@@ -5437,14 +6747,22 @@ namespace BiwamasuMixerGui
             statusStrip.Font = Font;
             statusStrip.SizingGrip = false;
             _statusText = new ToolStripStatusLabel("準備完了");
+            _statusText.Spring = true;
+            _statusText.TextAlign = ContentAlignment.MiddleLeft;
+            _updateLink = new ToolStripStatusLabel();
+            _updateLink.IsLink = true;
+            _updateLink.Visible = false;
+            _updateLink.Click += delegate { ShowUpdateAvailableDialog(); };
             statusStrip.Items.Add(_statusText);
+            statusStrip.Items.Add(_updateLink);
 
             TableLayoutPanel mainLayout = new TableLayoutPanel();
             mainLayout.Dock = DockStyle.Fill;
             mainLayout.Padding = UiScale.Pad(12, 8, 12, 8);
             mainLayout.ColumnCount = 1;
             mainLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            mainLayout.RowCount = 4;
+            mainLayout.RowCount = 5;
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -5489,7 +6807,7 @@ namespace BiwamasuMixerGui
             connGrid.Controls.Add(_lblSignalDetail, 0, 1);
             grpConn.Controls.Add(connGrid);
 
-            // 2. Volume (clean, zero explanation box — red region & numeric tint convey non-recommended amplification)
+            // 2. Volume (yellow caution band on slider when net gain > 0 dB; dB boxes keep normal colors)
             GroupBox grpVol = new GroupBox();
             grpVol.Text = "音量バランス";
             grpVol.Dock = DockStyle.Fill;
@@ -5500,29 +6818,38 @@ namespace BiwamasuMixerGui
             TableLayoutPanel volGrid = new TableLayoutPanel();
             volGrid.Dock = DockStyle.Fill;
             volGrid.AutoSize = true;
-            volGrid.ColumnCount = 4;
+            volGrid.ColumnCount = 5;
             volGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(118f)));
             volGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             volGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(74f)));
             volGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiScale.Pxf(28f)));
+            volGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             AddVolumeRow(
                 volGrid, 0, "マスター音量:",
-                -60.0m, 6.0m, -45.0m, -45.0, false,
-                new double[] { -60, -45, -30, -15, 0, 6 },
-                out _sldMaster, out _numMaster);
+                -80.0m, 6.0m, -45.0m, -45.0, false,
+                new double[] { -80, -60, -40, -20, 0, 6 },
+                out _lblMasterTitle, out _sldMaster, out _numMaster, out _lblMasterUnit, out _chkMuteMaster);
+
+            Panel volSep = new Panel();
+            volSep.Height = 1;
+            volSep.Dock = DockStyle.Fill;
+            volSep.BackColor = SystemColors.ControlDark;
+            volSep.Margin = UiScale.Pad(0, 4, 0, 6);
+            volGrid.Controls.Add(volSep, 0, 1);
+            volGrid.SetColumnSpan(volSep, 5);
 
             AddVolumeRow(
-                volGrid, 1, "Switch 2 補正:",
-                -60.0m, 12.0m, 0.0m, 0.0, true,
-                new double[] { -60, -45, -30, -15, 0, 12 },
-                out _sldGame, out _numGame);
+                volGrid, 2, "Switch 2 補正:",
+                -24.0m, 24.0m, 0.0m, 0.0, true,
+                new double[] { -24, -12, 0, 12, 24 },
+                out _lblGameTitle, out _sldGame, out _numGame, out _lblGameUnit, out _chkMuteGame);
 
             AddVolumeRow(
-                volGrid, 2, "PC 音量補正:",
-                -24.0m, 12.0m, 0.0m, 0.0, true,
-                new double[] { -24, -12, 0, 12 },
-                out _sldPc, out _numPc);
+                volGrid, 3, "PC 音量補正:",
+                -24.0m, 24.0m, 0.0m, 0.0, true,
+                new double[] { -24, -12, 0, 12, 24 },
+                out _lblPcTitle, out _sldPc, out _numPc, out _lblPcUnit, out _chkMutePc);
 
             grpVol.Controls.Add(volGrid);
 
@@ -5554,11 +6881,11 @@ namespace BiwamasuMixerGui
             eqBtns.Anchor = AnchorStyles.Right;
             eqBtns.Margin = new Padding(0);
 
-            Button btnLoadPeace = UiScale.CreateButton("ファイル読込(&L)...", 114, 26);
+            Button btnLoadPeace = UiScale.CreateButton("ファイル読込(&L)...", 136, 26);
             btnLoadPeace.Click += OnLoadPeaceMainClick;
-            Button btnPasteAi = UiScale.CreateButton("AI・テキスト貼付(&P)...", 138, 26);
+            Button btnPasteAi = UiScale.CreateButton("AI・テキスト貼付(&P)...", 166, 26);
             btnPasteAi.Click += OnOpenAiPasteMainClick;
-            Button btnDetailEq = UiScale.CreateButton("詳細設定(&D)...", 98, 26);
+            Button btnDetailEq = UiScale.CreateButton("詳細設定(&D)...", 108, 26);
             btnDetailEq.Margin = UiScale.Pad(0, 2, 0, 2);
             btnDetailEq.Click += OnOpenEqEditorClick;
 
@@ -5578,7 +6905,70 @@ namespace BiwamasuMixerGui
             eqGrid.SetColumnSpan(_lblEqSummary, 2);
             grpEq.Controls.Add(eqGrid);
 
-            // 4. Bottom buttons
+            // 4. Quick actions & support (mirrors menu items directly on the main window for discoverability)
+            GroupBox grpSupport = new GroupBox();
+            grpSupport.Text = "便利機能・サポート";
+            grpSupport.Dock = DockStyle.Fill;
+            grpSupport.AutoSize = true;
+            grpSupport.Margin = UiScale.Pad(0, 0, 0, 6);
+            grpSupport.Padding = UiScale.Pad(10, 6, 10, 7);
+
+            TableLayoutPanel supGrid = new TableLayoutPanel();
+            supGrid.Dock = DockStyle.Fill;
+            supGrid.AutoSize = true;
+            supGrid.ColumnCount = 3;
+            supGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333f));
+            supGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333f));
+            supGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.334f));
+            supGrid.RowCount = 3;
+            supGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            supGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            supGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            Button btnFavAddMain = CreateGridActionButton("現在値をお気に入りに追加", 0, 4);
+            btnFavAddMain.Click += OnAddFavoriteClick;
+
+            Button btnFavManageMain = CreateGridActionButton("お気に入り選択・管理", 1, 4);
+            btnFavManageMain.Click += OnManageFavoritesClick;
+
+            Button btnWinSoundMain = CreateGridActionButton("Windowsサウンド設定を開く", 2, 4);
+            btnWinSoundMain.Click += delegate { OpenWindowsSoundControlPanel(); };
+
+            Button btnPicoFlashMain = CreateGridActionButton("Pico書込ツール (組立・更新)", 0, 2);
+            btnPicoFlashMain.Click += OnOpenFirmwareFlashClick;
+
+            _btnCheckUpdateMain = CreateGridActionButton("更新を確認", 1, 2);
+            _btnCheckUpdateMain.Click += OnCheckUpdateMainButtonClick;
+
+            Button btnHelpMain = CreateGridActionButton("使い方・ヘルプ", 2, 2);
+            btnHelpMain.Click += delegate { OpenHelpGuideDialog(); };
+
+            _chkAutoUpdateMain = new CheckBox();
+            _chkAutoUpdateMain.Text = "このソフトを開いた時、更新があれば通知する（常駐なし・最大1日1回）";
+            _chkAutoUpdateMain.AutoSize = true;
+            _chkAutoUpdateMain.Checked = _checkUpdatesOnStartup;
+            _chkAutoUpdateMain.ForeColor = SystemColors.ControlDarkDark;
+            _chkAutoUpdateMain.Anchor = AnchorStyles.Left;
+            _chkAutoUpdateMain.Margin = UiScale.Pad(2, 4, 0, 0);
+            _chkAutoUpdateMain.CheckedChanged += delegate
+            {
+                if (!_syncingAutoUpdateUi)
+                {
+                    SetStartupAutoCheckPreference(_chkAutoUpdateMain.Checked);
+                }
+            };
+
+            supGrid.Controls.Add(btnFavAddMain, 0, 0);
+            supGrid.Controls.Add(btnFavManageMain, 1, 0);
+            supGrid.Controls.Add(btnWinSoundMain, 2, 0);
+            supGrid.Controls.Add(btnPicoFlashMain, 0, 1);
+            supGrid.Controls.Add(_btnCheckUpdateMain, 1, 1);
+            supGrid.Controls.Add(btnHelpMain, 2, 1);
+            supGrid.Controls.Add(_chkAutoUpdateMain, 0, 2);
+            supGrid.SetColumnSpan(_chkAutoUpdateMain, 3);
+            grpSupport.Controls.Add(supGrid);
+
+            // 5. Bottom buttons
             TableLayoutPanel bottomBar = new TableLayoutPanel();
             bottomBar.Dock = DockStyle.Bottom;
             bottomBar.AutoSize = true;
@@ -5628,7 +7018,8 @@ namespace BiwamasuMixerGui
             mainLayout.Controls.Add(grpConn, 0, 0);
             mainLayout.Controls.Add(grpVol, 0, 1);
             mainLayout.Controls.Add(grpEq, 0, 2);
-            mainLayout.Controls.Add(bottomBar, 0, 3);
+            mainLayout.Controls.Add(grpSupport, 0, 3);
+            mainLayout.Controls.Add(bottomBar, 0, 4);
 
             Controls.Add(mainLayout);
             Controls.Add(statusStrip);
@@ -5708,7 +7099,12 @@ namespace BiwamasuMixerGui
         {
             base.OnShown(e);
             RefreshFromDevice(false);
+            RefreshUpdateIndicator();
             _pollTimer.Start();
+            if (_enableStartupUpdateCheck && _checkUpdatesOnStartup)
+            {
+                StartBackgroundUpdateCheckIfDue();
+            }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -5793,56 +7189,150 @@ namespace BiwamasuMixerGui
             ToolStripMenuItem miRefresh = new ToolStripMenuItem("状態を再読込(&R)");
             miRefresh.Click += delegate { RefreshFromDevice(true); };
             ToolStripMenuItem miWinSound = new ToolStripMenuItem("Windows サウンド設定を開く(&W)...");
-            miWinSound.Click += delegate
-            {
-                try { Process.Start("mmsys.cpl"); }
-                catch (Exception ex) { MessageBox.Show(this, ex.Message, "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-            };
+            miWinSound.Click += delegate { OpenWindowsSoundControlPanel(); };
             ToolStripMenuItem miReset = new ToolStripMenuItem("初期値に戻す(&D)...");
             miReset.Click += OnResetDefaultsClick;
-            ToolStripMenuItem miBootsel = new ToolStripMenuItem("BOOTSELモードへ切替(&B)...");
-            miBootsel.Click += OnEnterBootselClick;
             mTools.DropDownItems.Add(miEqEditor);
             mTools.DropDownItems.Add(miRefresh);
             mTools.DropDownItems.Add(miWinSound);
             mTools.DropDownItems.Add(new ToolStripSeparator());
             mTools.DropDownItems.Add(miReset);
-            mTools.DropDownItems.Add(miBootsel);
+
+            ToolStripMenuItem mUpdate = new ToolStripMenuItem("更新・書込(&U)");
+            ToolStripMenuItem miCheckUpdate = new ToolStripMenuItem("最新バージョンを確認(&U)...");
+            miCheckUpdate.Click += OnManualCheckUpdatesClick;
+            ToolStripMenuItem miFlashFw = new ToolStripMenuItem("Picoへファームウェアを書き込む (初回組立・更新)(&F)...");
+            miFlashFw.Click += OnOpenFirmwareFlashClick;
+            ToolStripMenuItem miBootsel = new ToolStripMenuItem("BOOTSELモードへ切替(&B)...");
+            miBootsel.Click += OnEnterBootselClick;
+            _miAutoUpdateCheck = new ToolStripMenuItem("このソフトを開いた時、更新があれば通知する(&C)");
+            _miAutoUpdateCheck.CheckOnClick = true;
+            _miAutoUpdateCheck.Checked = _checkUpdatesOnStartup;
+            _miAutoUpdateCheck.CheckedChanged += delegate
+            {
+                if (!_syncingAutoUpdateUi)
+                {
+                    SetStartupAutoCheckPreference(_miAutoUpdateCheck.Checked);
+                }
+            };
+            mUpdate.DropDownItems.Add(miCheckUpdate);
+            mUpdate.DropDownItems.Add(miFlashFw);
+            mUpdate.DropDownItems.Add(miBootsel);
+            mUpdate.DropDownItems.Add(new ToolStripSeparator());
+            mUpdate.DropDownItems.Add(_miAutoUpdateCheck);
 
             ToolStripMenuItem mHelp = new ToolStripMenuItem("ヘルプ(&H)");
             ToolStripMenuItem miGuide = new ToolStripMenuItem("使い方・各項目ガイド(&G)...");
             miGuide.ShortcutKeys = Keys.F1;
-            miGuide.Click += delegate
-            {
-                using (HelpGuideForm hf = new HelpGuideForm(_appIcon, 0))
-                {
-                    hf.ShowDialog(this);
-                }
-            };
+            miGuide.Click += delegate { OpenHelpGuideDialog(); };
+            ToolStripMenuItem miGitHub = new ToolStripMenuItem("GitHub ページを開く(&W)...");
+            miGitHub.Click += delegate { ReleaseUpdateChecker.OpenSafeRepoTopPage(this); };
             ToolStripMenuItem miAbout = new ToolStripMenuItem("バージョン情報(&A)...");
             miAbout.Click += delegate
             {
                 MessageBox.Show(
                     this,
                     string.Format(
-                        "Biwamasu-Mixer Setting tool v1.4\r\n" +
-                        "対象USB ID: VID_{0} / PID_{1}\r\n\r\n" +
+                        "Biwamasu-Mixer Setting tool v{0}\r\n" +
+                        "PC側 (RX): {1}\r\n" +
+                        "Switch 2 側 (TX): {2}\r\n" +
+                        "対象USB ID: VID_{3} / PID_{4}\r\n\r\n" +
                         "Copyright (c) 2026 mugicha_xtx\r\n" +
                         "MIT License",
-                        _hid.VidUpper, _hid.PidUpper),
+                        ReleaseUpdateChecker.CurrentAppVersionText,
+                        GetRxVersionDisplayText(),
+                        GetTxVersionDisplayText(),
+                        _hid.VidUpper,
+                        _hid.PidUpper),
                     "バージョン情報",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             };
             mHelp.DropDownItems.Add(miGuide);
+            mHelp.DropDownItems.Add(miGitHub);
             mHelp.DropDownItems.Add(new ToolStripSeparator());
             mHelp.DropDownItems.Add(miAbout);
 
             ms.Items.Add(mFile);
             ms.Items.Add(mFavorites);
             ms.Items.Add(mTools);
+            ms.Items.Add(mUpdate);
             ms.Items.Add(mHelp);
             return ms;
+        }
+
+        private static Button CreateGridActionButton(string text, int colIndex, int bottomPad)
+        {
+            Button btn = new Button();
+            btn.Text = text;
+            btn.Height = UiScale.Px(27);
+            btn.Dock = DockStyle.Fill;
+            btn.UseVisualStyleBackColor = true;
+            int leftPad = colIndex == 0 ? 0 : 3;
+            int rightPad = colIndex == 2 ? 0 : 3;
+            btn.Margin = UiScale.Pad(leftPad, 0, rightPad, bottomPad);
+            return btn;
+        }
+
+        private void OpenWindowsSoundControlPanel()
+        {
+            try { Process.Start("mmsys.cpl"); }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        }
+
+        private void OpenHelpGuideDialog()
+        {
+            using (HelpGuideForm hf = new HelpGuideForm(_appIcon, 0))
+            {
+                hf.ShowDialog(this);
+            }
+        }
+
+        private void SetStartupAutoCheckPreference(bool enabled)
+        {
+            _checkUpdatesOnStartup = enabled;
+            _syncingAutoUpdateUi = true;
+            try
+            {
+                if (_miAutoUpdateCheck != null) _miAutoUpdateCheck.Checked = enabled;
+                if (_chkAutoUpdateMain != null) _chkAutoUpdateMain.Checked = enabled;
+            }
+            finally
+            {
+                _syncingAutoUpdateUi = false;
+            }
+            ReleaseUpdateChecker.SavePrefs(_checkUpdatesOnStartup, _lastUpdateCheckTicks, _latestKnownTag, _latestKnownTargets, _latestReleaseUrl);
+        }
+
+        private string GetRxVersionDisplayText()
+        {
+            return (_deviceConnected && _connectedFwBcd != 0)
+                ? HidDeviceConnection.FormatUsbBcdVersion(_connectedFwBcd)
+                : "未接続";
+        }
+
+        private string GetTxVersionDisplayText()
+        {
+            return (_deviceConnected && _connectedTxFwBcd != 0)
+                ? HidDeviceConnection.FormatUsbBcdVersion(_connectedTxFwBcd)
+                : "未受信";
+        }
+
+        private bool IsAnyComponentUpdateAvailable()
+        {
+            Version rxVer = _deviceConnected ? HidDeviceConnection.UsbBcdToVersion(_connectedFwBcd) : null;
+            Version txVer = _deviceConnected ? HidDeviceConnection.UsbBcdToVersion(_connectedTxFwBcd) : null;
+            return ReleaseUpdateChecker.IsUpdateAvailable(_latestKnownTargets, rxVer, txVer);
+        }
+
+        private void OnCheckUpdateMainButtonClick(object sender, EventArgs e)
+        {
+            if (IsAnyComponentUpdateAvailable() && !string.IsNullOrEmpty(_latestKnownTag))
+            {
+                ShowUpdateAvailableDialog();
+                return;
+            }
+            OnManualCheckUpdatesClick(sender, e);
         }
 
         private void RebuildFavoritesMenu(ToolStripMenuItem menu, int fixedCount)
@@ -5882,8 +7372,11 @@ namespace BiwamasuMixerGui
             double resetDb,
             bool bipolar,
             double[] ticks,
+            out Label lblTitle,
             out GainSlider sld,
-            out NumericUpDown num)
+            out NumericUpDown num,
+            out Label lblUnit,
+            out CheckBox chkMute)
         {
             Label lbl = new Label();
             lbl.Text = title;
@@ -5917,9 +7410,17 @@ namespace BiwamasuMixerGui
             unit.AutoSize = true;
             unit.Anchor = AnchorStyles.Left;
 
+            CheckBox muteBox = new CheckBox();
+            muteBox.Text = "ミュート";
+            muteBox.AutoSize = true;
+            muteBox.Anchor = AnchorStyles.Left;
+            muteBox.Margin = UiScale.Pad(8, 4, 2, 4);
+            muteBox.CheckedChanged += OnVolumeMuteCheckedChanged;
+
             grid.Controls.Add(gs, 1, row);
             grid.Controls.Add(ud, 2, row);
             grid.Controls.Add(unit, 3, row);
+            grid.Controls.Add(muteBox, 4, row);
 
             gs.DragStarted += delegate { _userDraggingSlider = true; };
             gs.DragCompleted += delegate
@@ -5952,8 +7453,62 @@ namespace BiwamasuMixerGui
                 QueueParamWrite();
             };
 
+            lblTitle = lbl;
             sld = gs;
             num = ud;
+            lblUnit = unit;
+            chkMute = muteBox;
+        }
+
+        private byte GetCurrentUserMuteMask()
+        {
+            byte m = 0;
+            if (_chkMuteMaster != null && _chkMuteMaster.Checked) m |= 1;
+            if (_chkMuteGame != null && _chkMuteGame.Checked) m |= 2;
+            if (_chkMutePc != null && _chkMutePc.Checked) m |= 4;
+            return m;
+        }
+
+        private void UpdateVolumeMuteVisuals()
+        {
+            bool mMute = _chkMuteMaster != null && _chkMuteMaster.Checked;
+            bool gMute = _chkMuteGame != null && _chkMuteGame.Checked;
+            bool pMute = _chkMutePc != null && _chkMutePc.Checked;
+
+            bool masterActive = !mMute;
+            bool gameActive = !(mMute || gMute);
+            bool pcActive = !(mMute || pMute);
+
+            if (_lblMasterTitle != null) _lblMasterTitle.Enabled = masterActive;
+            if (_sldMaster != null) _sldMaster.Enabled = masterActive;
+            if (_numMaster != null) _numMaster.Enabled = masterActive;
+            if (_lblMasterUnit != null) _lblMasterUnit.Enabled = masterActive;
+
+            if (_lblGameTitle != null) _lblGameTitle.Enabled = gameActive;
+            if (_sldGame != null) _sldGame.Enabled = gameActive;
+            if (_numGame != null) _numGame.Enabled = gameActive;
+            if (_lblGameUnit != null) _lblGameUnit.Enabled = gameActive;
+
+            if (_lblPcTitle != null) _lblPcTitle.Enabled = pcActive;
+            if (_sldPc != null) _sldPc.Enabled = pcActive;
+            if (_numPc != null) _numPc.Enabled = pcActive;
+            if (_lblPcUnit != null) _lblPcUnit.Enabled = pcActive;
+        }
+
+        private void OnVolumeMuteCheckedChanged(object sender, EventArgs e)
+        {
+            if (_syncingUi) return;
+            UpdateVolumeMuteVisuals();
+            UpdateGainWarningsAndThresholds();
+            if (!_deviceConnected) return;
+            try
+            {
+                WriteCurrentParamsOrThrow();
+            }
+            catch (Exception ex)
+            {
+                HandleCommFailure(ex);
+            }
         }
 
         private void UpdateGainWarningsAndThresholds()
@@ -5974,32 +7529,19 @@ namespace BiwamasuMixerGui
             double pcNet = master + pc;
             bool swOver = swNet > 0.04;
             bool pcOver = pcNet > 0.04;
-            bool masterOver = master > masterThreshold + 0.04;
 
-            Color warnFieldBg = Color.FromArgb(255, 230, 230);
-            Color warnFieldFg = Color.FromArgb(164, 16, 16);
-
-            _numMaster.BackColor = masterOver ? warnFieldBg : SystemColors.Window;
-            _numMaster.ForeColor = masterOver ? warnFieldFg : SystemColors.WindowText;
-
-            _numGame.BackColor = swOver ? warnFieldBg : SystemColors.Window;
-            _numGame.ForeColor = swOver ? warnFieldFg : SystemColors.WindowText;
-
-            _numPc.BackColor = pcOver ? warnFieldBg : SystemColors.Window;
-            _numPc.ForeColor = pcOver ? warnFieldFg : SystemColors.WindowText;
-
-            if (swOver || pcOver)
+            if (_recentClipDetected)
             {
-                _statusText.ForeColor = Color.FromArgb(164, 20, 20);
+                _statusText.ForeColor = Color.FromArgb(180, 20, 20);
+                _statusText.Text = "音割れ(クリッピング)を検知: マスター音量またはEQプリアンプを下げてください";
+            }
+            else if (swOver || pcOver)
+            {
+                _statusText.ForeColor = Color.FromArgb(156, 94, 0);
                 _statusText.Text = string.Format(
                     CultureInfo.InvariantCulture,
-                    "非推奨: 合計ゲインが 0 dB を超えています (Switch 2: {0:+0.0;-0.0;0.0} dB / PC: {1:+0.0;-0.0;0.0} dB)",
+                    "注意: 大きな音が出ると音割れする可能性があります (Switch 2: {0:+0.0;-0.0;0.0} dB / PC: {1:+0.0;-0.0;0.0} dB)",
                     swNet, pcNet);
-            }
-            else if (_recentClipDetected)
-            {
-                _statusText.ForeColor = Color.FromArgb(164, 20, 20);
-                _statusText.Text = "音割れ(クリッピング)を検知: マスター音量またはEQプリアンプを下げてください";
             }
             else if (_eqBypassLoudnessHint && !_chkEq.Checked && _eqProfile != null && _eqProfile.PreampDb <= -8.0)
             {
@@ -6148,7 +7690,8 @@ namespace BiwamasuMixerGui
                 (double)_numGame.Value,
                 (double)_numMaster.Value,
                 (double)_numPc.Value,
-                _lastRxPinMode);
+                _lastRxPinMode,
+                GetCurrentUserMuteMask());
         }
 
         private void FlushPendingParamWrite()
@@ -6159,12 +7702,7 @@ namespace BiwamasuMixerGui
 
             try
             {
-                _hid.WriteParams(
-                    _chkEq.Checked,
-                    (double)_numGame.Value,
-                    (double)_numMaster.Value,
-                    (double)_numPc.Value,
-                    _lastRxPinMode);
+                WriteCurrentParamsOrThrow();
                 if (_statusText.ForeColor == SystemColors.ControlText)
                 {
                     _statusText.Text = string.Format(
@@ -6198,7 +7736,10 @@ namespace BiwamasuMixerGui
 
             if (EqDspMath.AreAllCoeffsFlat(devPre, devCoeffs) && !st.EqEnabled && !st.FlashConfigLoaded)
             {
-                _eqProfile = new EqProfile();
+                if (!_hasLocalEqCache)
+                {
+                    _eqProfile = new EqProfile();
+                }
                 return;
             }
 
@@ -6218,6 +7759,8 @@ namespace BiwamasuMixerGui
                 MixerStatus st = _hid.ReadFullStatus();
                 bool firstConnect = !_deviceConnected;
                 _deviceConnected = true;
+                _connectedFwBcd = st.FirmwareBcd;
+                _connectedTxFwBcd = st.TxFirmwareBcd;
                 _deviceFlashLoaded = st.FlashConfigLoaded;
                 _lastRxPinMode = st.UartRxPinMode;
                 _testToneActive = st.TestToneOn;
@@ -6265,6 +7808,10 @@ namespace BiwamasuMixerGui
                         SetPairValue(_sldMaster, _numMaster, st.MasterDb);
                         SetPairValue(_sldGame, _numGame, st.GameDb);
                         SetPairValue(_sldPc, _numPc, st.PcTrimDb);
+                        _chkMuteMaster.Checked = (st.UserMuteMask & 1) != 0;
+                        _chkMuteGame.Checked = (st.UserMuteMask & 2) != 0;
+                        _chkMutePc.Checked = (st.UserMuteMask & 4) != 0;
+                        UpdateVolumeMuteVisuals();
                         _chkEq.Checked = st.EqEnabled;
                         UpdateGainWarningsAndThresholds();
                         UpdateEqSummaryLabel();
@@ -6290,10 +7837,13 @@ namespace BiwamasuMixerGui
                 {
                     _statusText.Text = "接続済み";
                 }
+                RefreshUpdateIndicator();
             }
             catch (Exception ex)
             {
                 _deviceConnected = false;
+                _connectedFwBcd = 0;
+                _connectedTxFwBcd = 0;
                 _deviceFlashLoaded = false;
                 _recentClipDetected = false;
                 _eqBypassLoudnessHint = false;
@@ -6304,11 +7854,24 @@ namespace BiwamasuMixerGui
                 _lblSignalDetail.ForeColor = SystemColors.ControlDarkDark;
                 _btnTestTone.Text = "テスト音: OFF";
                 _btnSaveFlash.Enabled = false;
+                _syncingUi = true;
+                try
+                {
+                    _chkMuteMaster.Checked = false;
+                    _chkMuteGame.Checked = false;
+                    _chkMutePc.Checked = false;
+                    UpdateVolumeMuteVisuals();
+                }
+                finally
+                {
+                    _syncingUi = false;
+                }
                 if (manualAction)
                 {
                     _statusText.ForeColor = SystemColors.ControlText;
                     _statusText.Text = ex.Message;
                 }
+                RefreshUpdateIndicator();
             }
         }
 
@@ -6337,7 +7900,7 @@ namespace BiwamasuMixerGui
             QueueParamWrite();
         }
 
-        private void ApplyEqProfileAndState(EqProfile profile, bool enableEq, bool showToastOnOffline)
+        private bool ApplyEqProfileAndState(EqProfile profile, bool enableEq, bool showToastOnOffline)
         {
             bool wasEnabled = _chkEq.Checked;
             _recentClipDetected = false;
@@ -6363,23 +7926,19 @@ namespace BiwamasuMixerGui
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
                 }
-                return;
+                return true;
             }
 
             try
             {
                 _hid.WriteEqProfile(_eqProfile);
-                _hid.WriteParams(
-                    _chkEq.Checked,
-                    (double)_numGame.Value,
-                    (double)_numMaster.Value,
-                    (double)_numPc.Value,
-                    _lastRxPinMode);
+                WriteCurrentParamsOrThrow();
                 CacheProfileCoeffsLocally(_eqProfile);
                 if (_statusText.ForeColor == SystemColors.ControlText)
                 {
                     _statusText.Text = string.Format("EQ反映済み: {0}", _eqProfile.SourceLabel);
                 }
+                return true;
             }
             catch (Exception ex)
             {
@@ -6388,6 +7947,7 @@ namespace BiwamasuMixerGui
                     MessageBox.Show(this, "EQ送信エラー: " + ex.Message, "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 HandleCommFailure(ex);
+                return false;
             }
         }
 
@@ -6395,12 +7955,7 @@ namespace BiwamasuMixerGui
         {
             using (OpenFileDialog dlg = new OpenFileDialog())
             {
-                dlg.Title = "EQ設定ファイルを開く (.peace / .txt)";
-                dlg.Filter = "Peace / Equalizer APO 設定 (*.peace;*.txt)|*.peace;*.txt|すべてのファイル (*.*)|*.*";
-                if (!string.IsNullOrEmpty(_lastEqDir) && Directory.Exists(_lastEqDir))
-                {
-                    dlg.InitialDirectory = _lastEqDir;
-                }
+                EqUiHelpers.ConfigureOpenEqDialog(dlg, _lastEqDir);
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
                 try
@@ -6445,37 +8000,19 @@ namespace BiwamasuMixerGui
 
         private void OnMainDragEnter(object sender, DragEventArgs e)
         {
-            if (e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(DataFormats.UnicodeText))
-            {
-                e.Effect = DragDropEffects.Copy;
-            }
-            else
-            {
-                e.Effect = DragDropEffects.None;
-            }
+            EqUiHelpers.HandleEqDragEnter(e);
         }
 
         private void OnMainDragDrop(object sender, DragEventArgs e)
         {
             try
             {
-                if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                EqProfile dropped;
+                string droppedDir;
+                if (EqUiHelpers.TryReadDroppedEqProfile(e, out dropped, out droppedDir))
                 {
-                    string[] files = e.Data.GetData(DataFormats.FileDrop) as string[];
-                    if (files != null && files.Length > 0)
-                    {
-                        _lastEqDir = Path.GetDirectoryName(files[0]);
-                        PromptAndApplyLoadedEq(EqDspMath.ParsePeaceFile(files[0]));
-                        return;
-                    }
-                }
-                if (e.Data.GetDataPresent(DataFormats.UnicodeText))
-                {
-                    string txt = e.Data.GetData(DataFormats.UnicodeText) as string;
-                    if (!string.IsNullOrEmpty(txt))
-                    {
-                        PromptAndApplyLoadedEq(EqDspMath.ParsePeaceText(txt, "AI・テキスト貼付"));
-                    }
+                    if (!string.IsNullOrEmpty(droppedDir)) _lastEqDir = droppedDir;
+                    PromptAndApplyLoadedEq(dropped);
                 }
             }
             catch (Exception ex)
@@ -6491,16 +8028,12 @@ namespace BiwamasuMixerGui
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;
-                try
+                EqProfile parsed;
+                if (EqUiHelpers.TryParseClipboardEqProfile(out parsed))
                 {
-                    if (Clipboard.ContainsText())
-                    {
-                        EqProfile parsed = EqDspMath.ParsePeaceText(Clipboard.GetText(), "AI・テキスト貼付");
-                        PromptAndApplyLoadedEq(parsed);
-                        return;
-                    }
+                    PromptAndApplyLoadedEq(parsed);
+                    return;
                 }
-                catch { }
                 OnOpenAiPasteMainClick(this, EventArgs.Empty);
                 return;
             }
@@ -6608,9 +8141,7 @@ namespace BiwamasuMixerGui
         {
             using (SaveFileDialog dlg = new SaveFileDialog())
             {
-                dlg.Title = "EQ設定をファイルに保存";
-                dlg.Filter = "Equalizer APO テキスト (*.txt)|*.txt";
-                dlg.FileName = "my-biwamasu-eq.txt";
+                EqUiHelpers.ConfigureSaveEqDialog(dlg);
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
                 try
@@ -6661,12 +8192,7 @@ namespace BiwamasuMixerGui
             try
             {
                 _hid.WriteRawEqCoeffs(rawPreamp, rawCoeffs);
-                _hid.WriteParams(
-                    _chkEq.Checked,
-                    (double)_numGame.Value,
-                    (double)_numMaster.Value,
-                    (double)_numPc.Value,
-                    _lastRxPinMode);
+                WriteCurrentParamsOrThrow();
                 _lastHwPreampLin = rawPreamp;
                 _lastHwCoeffs = rawCoeffs;
             }
@@ -6697,10 +8223,7 @@ namespace BiwamasuMixerGui
                     _chkEq.Checked,
                     _lastEqDir,
                     _appIcon,
-                    delegate(EqProfile applied, bool eqOn, bool explicitCommit)
-                    {
-                        ApplyEqProfileAndState(applied, eqOn, explicitCommit);
-                    },
+                    ApplyEqProfileAndState,
                     _lastHwPreampLin,
                     _lastHwCoeffs,
                     RestoreRawHardwareEqAndState))
@@ -6790,7 +8313,8 @@ namespace BiwamasuMixerGui
 
             MixerStatus after = null;
             Exception lastErr = null;
-            for (int attempt = 0; attempt < 4; attempt++)
+            // Allow up to ~520 ms total (160 ms initial + 6 * 60 ms) for W25Q32JV worst-case 400 ms sector erase.
+            for (int attempt = 0; attempt < 7; attempt++)
             {
                 try
                 {
@@ -6801,7 +8325,7 @@ namespace BiwamasuMixerGui
                 {
                     lastErr = ex;
                 }
-                Thread.Sleep(60);
+                if (attempt < 6) Thread.Sleep(60);
             }
 
             if (after == null)
@@ -6838,6 +8362,306 @@ namespace BiwamasuMixerGui
             {
                 MessageBox.Show(this, "保存に失敗しました: " + ex.Message, "エラー", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 HandleCommFailure(ex);
+            }
+        }
+
+        private void OnOpenFirmwareFlashClick(object sender, EventArgs e)
+        {
+            _pollTimer.Stop();
+            try
+            {
+                if (_deviceConnected && _testToneActive)
+                {
+                    try { _hid.SetTestTone(false); } catch { }
+                    _testToneActive = false;
+                }
+                _hid.CloseHandle();
+                using (FirmwareFlashForm dlg = new FirmwareFlashForm(
+                    _appIcon,
+                    _appBaseDir,
+                    _usbVid,
+                    _bridgePid,
+                    _mixerPid,
+                    delegate { _hid.CloseHandle(); }))
+                {
+                    dlg.ShowDialog(this);
+                }
+            }
+            finally
+            {
+                RefreshFromDevice(false);
+                _pollTimer.Start();
+            }
+        }
+
+        private void RefreshUpdateIndicator()
+        {
+            bool hasUpdate = IsAnyComponentUpdateAvailable() && !string.IsNullOrEmpty(_latestKnownTag);
+            if (hasUpdate)
+            {
+                _updateLink.Text = "新しい更新 (" + _latestKnownTag + ") があります";
+                _updateLink.Visible = true;
+                if (_btnCheckUpdateMain != null)
+                {
+                    _btnCheckUpdateMain.Text = "更新あり (" + _latestKnownTag + ")!";
+                    _btnCheckUpdateMain.ForeColor = Color.FromArgb(16, 92, 168);
+                }
+            }
+            else
+            {
+                _updateLink.Visible = false;
+                if (_btnCheckUpdateMain != null)
+                {
+                    _btnCheckUpdateMain.Text = "更新を確認";
+                    _btnCheckUpdateMain.ForeColor = SystemColors.ControlText;
+                }
+            }
+        }
+
+        private void StartBackgroundUpdateCheckIfDue()
+        {
+            long nowTicks = DateTime.UtcNow.Ticks;
+            if (_lastUpdateCheckTicks > 0 && _lastUpdateCheckTicks <= nowTicks &&
+                (nowTicks - _lastUpdateCheckTicks) < TimeSpan.FromHours(24).Ticks)
+            {
+                return;
+            }
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                ReleaseCheckResult res = ReleaseUpdateChecker.FetchLatestFromGitHub();
+                if (!res.Success || IsDisposed) return;
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (IsDisposed) return;
+                        _lastUpdateCheckTicks = DateTime.UtcNow.Ticks;
+                        if (!res.NoReleasePublishedYet && res.Targets != null)
+                        {
+                            _latestKnownTag = res.LatestTag;
+                            _latestKnownTargets = res.Targets;
+                            _latestReleaseUrl = res.ReleasePageUrl;
+                        }
+                        ReleaseUpdateChecker.SavePrefs(_checkUpdatesOnStartup, _lastUpdateCheckTicks, _latestKnownTag, _latestKnownTargets, _latestReleaseUrl);
+                        RefreshUpdateIndicator();
+                    });
+                }
+                catch { }
+            });
+        }
+
+        private void OnManualCheckUpdatesClick(object sender, EventArgs e)
+        {
+            if (_manualUpdateCheckBusy) return;
+            _manualUpdateCheckBusy = true;
+            _statusText.ForeColor = SystemColors.ControlText;
+            _statusText.Text = "GitHubで最新バージョンを確認しています...";
+            Cursor = Cursors.WaitCursor;
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                ReleaseCheckResult res = ReleaseUpdateChecker.FetchLatestFromGitHub();
+                if (IsDisposed) return;
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (IsDisposed) return;
+                        _manualUpdateCheckBusy = false;
+                        Cursor = Cursors.Default;
+                        if (!res.Success)
+                        {
+                            _statusText.Text = "更新確認エラー";
+                            MessageBox.Show(this, res.ErrorMessage, "更新確認", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            return;
+                        }
+
+                        _lastUpdateCheckTicks = DateTime.UtcNow.Ticks;
+                        if (!res.NoReleasePublishedYet && res.Targets != null)
+                        {
+                            _latestKnownTag = res.LatestTag;
+                            _latestKnownTargets = res.Targets;
+                            _latestReleaseUrl = res.ReleasePageUrl;
+                        }
+                        ReleaseUpdateChecker.SavePrefs(_checkUpdatesOnStartup, _lastUpdateCheckTicks, _latestKnownTag, _latestKnownTargets, _latestReleaseUrl);
+                        RefreshUpdateIndicator();
+
+                        if (!res.NoReleasePublishedYet && IsAnyComponentUpdateAvailable())
+                        {
+                            _statusText.Text = "新しい更新 (" + _latestKnownTag + ") が見つかりました";
+                            ShowUpdateAvailableDialog();
+                        }
+                        else
+                        {
+                            Version rxVer = _deviceConnected ? HidDeviceConnection.UsbBcdToVersion(_connectedFwBcd) : null;
+                            Version txVer = _deviceConnected ? HidDeviceConnection.UsbBcdToVersion(_connectedTxFwBcd) : null;
+                            ReleaseVersionTargets shownTargets = res.NoReleasePublishedYet ? null : _latestKnownTargets;
+                            _statusText.Text = "最新バージョンです";
+                            MessageBox.Show(
+                                this,
+                                string.Format(
+                                    "現在お使いのバージョンは最新です。\r\n\r\n" +
+                                    "・設定ツール: {0}\r\n" +
+                                    "・PC側 (RX): {1}\r\n" +
+                                    "・Switch 2 側 (TX): {2}",
+                                    FormatToolUpdateLine(shownTargets != null ? shownTargets.ToolVersion : null),
+                                    FormatFirmwareUpdateLine(rxVer, shownTargets != null ? shownTargets.RxVersion : null, "未接続"),
+                                    FormatFirmwareUpdateLine(txVer, shownTargets != null ? shownTargets.TxVersion : null, "未受信")),
+                                "更新の確認",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Information);
+                        }
+                    });
+                }
+                catch { }
+            });
+        }
+
+        private static string FormatToolUpdateLine(Version targetToolVer)
+        {
+            Version cur = ReleaseUpdateChecker.CurrentAppVersion;
+            if (targetToolVer == null)
+            {
+                return ReleaseUpdateChecker.FormatVer(cur);
+            }
+            if (targetToolVer > cur)
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} → {1}  [更新あり]",
+                    ReleaseUpdateChecker.FormatVer(cur),
+                    ReleaseUpdateChecker.FormatVer(targetToolVer));
+            }
+            return ReleaseUpdateChecker.FormatVer(cur) + "  [最新]";
+        }
+
+        private static string FormatFirmwareUpdateLine(Version currentVer, Version targetVer, string absentLabel)
+        {
+            if (currentVer == null)
+            {
+                if (targetVer != null)
+                {
+                    return string.Format(CultureInfo.InvariantCulture, "{0} (最新: {1})", absentLabel, ReleaseUpdateChecker.FormatVer(targetVer));
+                }
+                return absentLabel;
+            }
+            if (targetVer == null)
+            {
+                return ReleaseUpdateChecker.FormatVer(currentVer);
+            }
+            if (targetVer > currentVer)
+            {
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} → {1}  [更新あり]",
+                    ReleaseUpdateChecker.FormatVer(currentVer),
+                    ReleaseUpdateChecker.FormatVer(targetVer));
+            }
+            return ReleaseUpdateChecker.FormatVer(currentVer) + "  [最新 (書込不要)]";
+        }
+
+        internal Form CreateUpdateAvailableDialog(string tagOverride, ReleaseVersionTargets targetsOverride)
+        {
+            string tag = !string.IsNullOrEmpty(tagOverride) ? tagOverride : _latestKnownTag;
+            ReleaseVersionTargets effTargets = targetsOverride ?? _latestKnownTargets;
+            if (effTargets == null && !string.IsNullOrEmpty(tag))
+            {
+                Version parsedTag;
+                if (ReleaseUpdateChecker.TryParseTagVersion(tag, out parsedTag))
+                {
+                    effTargets = ReleaseVersionTargets.FromFallbackTag(parsedTag);
+                }
+            }
+
+            Version rxVer = _deviceConnected ? HidDeviceConnection.UsbBcdToVersion(_connectedFwBcd) : null;
+            Version txVer = _deviceConnected ? HidDeviceConnection.UsbBcdToVersion(_connectedTxFwBcd) : null;
+            string toolLine = FormatToolUpdateLine(effTargets != null ? effTargets.ToolVersion : null);
+            string rxLine = FormatFirmwareUpdateLine(rxVer, effTargets != null ? effTargets.RxVersion : null, "未接続");
+            string txLine = FormatFirmwareUpdateLine(txVer, effTargets != null ? effTargets.TxVersion : null, "未受信");
+
+            Form dlg = new Form();
+            dlg.AutoScaleMode = AutoScaleMode.None;
+            dlg.Font = Font;
+            if (_appIcon != null) dlg.Icon = _appIcon;
+            dlg.Text = "アップデートのご案内";
+            dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+            dlg.MaximizeBox = false;
+            dlg.MinimizeBox = false;
+            dlg.ShowInTaskbar = false;
+            dlg.StartPosition = FormStartPosition.CenterParent;
+            dlg.ClientSize = new Size(UiScale.Px(548), UiScale.Px(316));
+
+            TableLayoutPanel layout = new TableLayoutPanel();
+            layout.Dock = DockStyle.Fill;
+            layout.Padding = UiScale.Pad(14, 12, 14, 12);
+            layout.ColumnCount = 1;
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            layout.RowCount = 2;
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            Label msg = new Label();
+            msg.AutoSize = true;
+            msg.MaximumSize = new Size(UiScale.Px(514), 0);
+            msg.Text = string.Format(
+                "GitHub に新しいリリース {0} が公開されています。\r\n\r\n" +
+                "・設定ツール: {1}\r\n" +
+                "・PC側 (RX): {2}\r\n" +
+                "・Switch 2 側 (TX): {3}\r\n\r\n" +
+                "【更新手順】\r\n" +
+                "1. [リリースページを開く] から最新の配布ZIPをダウンロード・解凍します。\r\n" +
+                "2. 設定ツールに [更新あり] がある場合は、新しい Setting tool.exe を使います。\r\n" +
+                "3. RX / TX に [更新あり] がある場合は、[ファームウェア書込画面] から更新してください。\r\n" +
+                "   （[最新 (書込不要)] のPicoは書き換え不要です）",
+                tag,
+                toolLine,
+                rxLine,
+                txLine);
+
+            FlowLayoutPanel btns = new FlowLayoutPanel();
+            btns.FlowDirection = FlowDirection.RightToLeft;
+            btns.Dock = DockStyle.Fill;
+            btns.AutoSize = true;
+            btns.WrapContents = false;
+            btns.Margin = new Padding(0);
+
+            Button btnClose = UiScale.CreateButton("閉じる", 88, 28);
+            btnClose.Margin = UiScale.Pad(6, 0, 0, 0);
+            btnClose.DialogResult = DialogResult.Cancel;
+
+            Button btnFlashUi = UiScale.CreateButton("ファームウェア書込画面...", 180, 28);
+            btnFlashUi.Margin = UiScale.Pad(6, 0, 0, 0);
+            btnFlashUi.Click += delegate
+            {
+                dlg.Close();
+                OnOpenFirmwareFlashClick(this, EventArgs.Empty);
+            };
+
+            Button btnOpenWeb = UiScale.CreateButton("リリースページを開く(&O)", 182, 28);
+            btnOpenWeb.Margin = new Padding(0);
+            btnOpenWeb.Click += delegate
+            {
+                ReleaseUpdateChecker.OpenSafeReleasePage(dlg, _latestReleaseUrl);
+            };
+
+            btns.Controls.Add(btnClose);
+            btns.Controls.Add(btnFlashUi);
+            btns.Controls.Add(btnOpenWeb);
+            dlg.CancelButton = btnClose;
+
+            layout.Controls.Add(msg, 0, 0);
+            layout.Controls.Add(btns, 0, 1);
+            dlg.Controls.Add(layout);
+            return dlg;
+        }
+
+        private void ShowUpdateAvailableDialog()
+        {
+            if (string.IsNullOrEmpty(_latestKnownTag) || _latestKnownTargets == null) return;
+            using (Form dlg = CreateUpdateAvailableDialog(null, null))
+            {
+                dlg.ShowDialog(this);
             }
         }
 
@@ -6906,7 +8730,7 @@ namespace BiwamasuMixerGui
             return ushort.TryParse(clean, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out val);
         }
 
-        private static void ReadHeaderUsbIds(string baseDir, ref ushort vid, ref ushort pid)
+        private static void ReadHeaderUsbIds(string baseDir, ref ushort vid, ref ushort bridgePid, ref ushort mixerPid)
         {
             string[] candidates = new string[]
             {
@@ -6914,6 +8738,7 @@ namespace BiwamasuMixerGui
                 Path.Combine(baseDir, "..", "include", "usb_ids.h")
             };
             Regex vidRx = new Regex(@"#define\s+USB_VID\s+(0x[0-9a-fA-F]+u?)");
+            Regex bridgeRx = new Regex(@"#define\s+BRIDGE_USB_PID\s+(0x[0-9a-fA-F]+u?)");
             Regex pidRx = new Regex(@"#define\s+MIXER_USB_PID\s+(0x[0-9a-fA-F]+u?)");
 
             for (int i = 0; i < candidates.Length; i++)
@@ -6923,15 +8748,18 @@ namespace BiwamasuMixerGui
                     string full = Path.GetFullPath(candidates[i]);
                     if (!File.Exists(full)) continue;
                     string txt = File.ReadAllText(full, Encoding.UTF8);
-                    ushort hv = 0, hp = 0;
+                    ushort hv = 0, hb = 0, hp = 0;
                     Match mv = vidRx.Match(txt);
+                    Match mb = bridgeRx.Match(txt);
                     Match mp = pidRx.Match(txt);
                     if (mv.Success) TryParseHexUshort(mv.Groups[1].Value, out hv);
+                    if (mb.Success) TryParseHexUshort(mb.Groups[1].Value, out hb);
                     if (mp.Success) TryParseHexUshort(mp.Groups[1].Value, out hp);
                     if (hv != 0 && hp != 0)
                     {
                         vid = hv;
-                        pid = hp;
+                        if (hb != 0) bridgePid = hb;
+                        mixerPid = hp;
                         return;
                     }
                 }
@@ -6979,6 +8807,20 @@ namespace BiwamasuMixerGui
                 if (iniParsed.Bands[0].Kind != FilterKind.LSC || Math.Abs(iniParsed.Bands[0].FrequencyHz - 105.0) > 0.01) return 9;
                 if (iniParsed.Bands[1].Kind != FilterKind.PK || Math.Abs(iniParsed.Bands[1].GainDb) > 0.01) return 10;
                 if (iniParsed.Bands[2].Kind != FilterKind.HSC || Math.Abs(iniParsed.Bands[2].GainDb - 2.5) > 0.01) return 11;
+
+                // Verify omitted-Q shelf in .peace INI matches omitted-Q shelf in Equalizer APO text
+                EqProfile iniNoQ = EqDspMath.ParsePeaceText(
+                    "[Frequencies]\r\nFrequency1=120\r\n[Gains]\r\nGain1=3.0\r\n[Filters]\r\nFilter1=14\r\n[General]\r\nPreAmp=-3\r\n",
+                    "noq-ini");
+                EqProfile apoNoQ = EqDspMath.ParsePeaceText(
+                    "Preamp: -3 dB\r\nFilter 1: ON LSC Fc 120 Hz Gain 3.0 dB\r\n",
+                    "noq-apo");
+                float[] cIni = EqDspMath.ComputeBiquad(iniNoQ.Bands[0], 1, out err);
+                float[] cApo = EqDspMath.ComputeBiquad(apoNoQ.Bands[0], 1, out err);
+                for (int k = 0; k < 5; k++)
+                {
+                    if (Math.Abs(cIni[k] - cApo[k]) > 1.0e-6f) return 27;
+                }
 
                 // Test messy AI chat output paste parsing (# Preset, markdown fences, bold Preamp, Unicode minus, Filter:/Filter1:, BW Oct, comma Fc)
                 string messyAiReply =
@@ -7056,18 +8898,92 @@ namespace BiwamasuMixerGui
 
             if (!GainSlider.VerifyGrooveDoubleClickSafetyForTest()) return 26;
 
-            using (MainForm mf = new MainForm(vid != 0 ? vid : (ushort)0xcafe, pid != 0 ? pid : (ushort)0x4026))
+            // Verify USB BCD decoding, GitHub release JSON / URL whitelist checks, and UF2 RP2350 header validation
+            Version bcd100 = HidDeviceConnection.UsbBcdToVersion(0x0100);
+            Version bcd123 = HidDeviceConnection.UsbBcdToVersion(0x0123);
+            if (bcd100 == null || bcd100 != new Version(1, 0, 0) || bcd123 != new Version(1, 2, 3)) return 28;
+
+            string relTag;
+            ReleaseVersionTargets relTargets;
+            string relUrl;
+            // 1) Fallback when body omits per-component lines: all 3 components inherit tag_name
+            if (!ReleaseUpdateChecker.TryParseLatestReleaseJson(
+                "{\"tag_name\":\"v1.2.0\",\"draft\":false,\"prerelease\":false,\"body\":\"Bug fixes\\r\\nand polish\",\"html_url\":\"https://github.com/mugicha-xtx/biwamasu-mixer/releases/tag/v1.2.0\"}",
+                out relTag, out relTargets, out relUrl)) return 29;
+            if (relTag != "v1.2.0" || relTargets == null ||
+                relTargets.ToolVersion != new Version(1, 2, 0) ||
+                relTargets.RxVersion != new Version(1, 2, 0) ||
+                relTargets.TxVersion != new Version(1, 2, 0) ||
+                relUrl != "https://github.com/mugicha-xtx/biwamasu-mixer/releases/tag/v1.2.0") return 30;
+            // 2) Hybrid body manifest with escaped quotes/newlines (Tool-only update v1.0.1 while RX/TX stay v1.0.0)
+            string relTagHybrid;
+            ReleaseVersionTargets hybridTargets;
+            string relUrlHybrid;
+            if (!ReleaseUpdateChecker.TryParseLatestReleaseJson(
+                "{\"tag_name\":\"v1.0.1\",\"draft\":false,\"prerelease\":false,\"body\":\"## Release \\\"v1.0.1\\\"\\r\\n- Tool: v1.0.1\\r\\n- `RX`: `v1.0.0`\\r\\n* **TX**: v1.0.0\\r\\n\"}",
+                out relTagHybrid, out hybridTargets, out relUrlHybrid)) return 40;
+            if (hybridTargets.ToolVersion != new Version(1, 0, 1) ||
+                hybridTargets.RxVersion != new Version(1, 0, 0) ||
+                hybridTargets.TxVersion != new Version(1, 0, 0)) return 41;
+            // Tool-only update: once Tool is 1.0.1, RX=1.0.0 & TX=1.0.0 must NOT trigger update notification
+            if (ReleaseUpdateChecker.IsUpdateAvailableForVersions(hybridTargets, new Version(1, 0, 1), new Version(1, 0, 0), new Version(1, 0, 0))) return 42;
+            // Before Tool is updated (Tool=1.0.0), it MUST trigger update notification
+            if (!ReleaseUpdateChecker.IsUpdateAvailableForVersions(hybridTargets, new Version(1, 0, 0), new Version(1, 0, 0), new Version(1, 0, 0))) return 43;
+            // 3) Single-line slash-separated manifest (`Tool: v1.0.2` / `RX: v1.0.1` / `TX: v1.0.0`)
+            string relTagInline;
+            ReleaseVersionTargets inlineTargets;
+            string relUrlInline;
+            if (!ReleaseUpdateChecker.TryParseLatestReleaseJson(
+                "{\"tag_name\":\"v1.0.2\",\"draft\":false,\"prerelease\":false,\"body\":\"`Tool: v1.0.2` / `RX: v1.0.1` / `TX: v1.0.0`\\r\\nDetails below\"}",
+                out relTagInline, out inlineTargets, out relUrlInline)) return 45;
+            if (inlineTargets.ToolVersion != new Version(1, 0, 2) ||
+                inlineTargets.RxVersion != new Version(1, 0, 1) ||
+                inlineTargets.TxVersion != new Version(1, 0, 0)) return 46;
+            if (ReleaseUpdateChecker.TryParseLatestReleaseJson(
+                "{\"tag_name\":\"v9.9.9\",\"draft\":true,\"prerelease\":false}",
+                out relTag, out relTargets, out relUrl)) return 31;
+            if (ReleaseUpdateChecker.SanitizeReleaseUrl("https://evil.example.com/payload.exe") != ReleaseUpdateChecker.ReleasesPageUrl) return 32;
+            if (ReleaseUpdateChecker.SanitizeReleaseUrl("cmd.exe") != ReleaseUpdateChecker.ReleasesPageUrl) return 33;
+            if (ReleaseUpdateChecker.SanitizeReleaseUrl(ReleaseUpdateChecker.LatestReleasePageUrl) != ReleaseUpdateChecker.LatestReleasePageUrl) return 44;
+            ReleaseVersionTargets t101 = ReleaseVersionTargets.FromFallbackTag(new Version(1, 0, 1));
+            ReleaseVersionTargets t100 = ReleaseVersionTargets.FromFallbackTag(new Version(1, 0, 0));
+            if (!ReleaseUpdateChecker.IsUpdateAvailableForVersions(t101, new Version(1, 0, 1), new Version(1, 0, 0), new Version(1, 0, 1))) return 34;
+            if (!ReleaseUpdateChecker.IsUpdateAvailableForVersions(t100, new Version(1, 0, 0), new Version(1, 0, 0), new Version(0, 9, 9))) return 38;
+            if (ReleaseUpdateChecker.IsUpdateAvailableForVersions(t100, new Version(1, 0, 0), new Version(1, 0, 0), null)) return 39;
+            if (ReleaseUpdateChecker.IsUpdateAvailableForVersions(t100, new Version(1, 0, 0), new Version(1, 0, 0), new Version(1, 0, 0))) return 35;
+
+            byte[] validUf2 = new byte[512];
+            Array.Copy(BitConverter.GetBytes(0x0A324655u), 0, validUf2, 0, 4);
+            Array.Copy(BitConverter.GetBytes(0x9E5D5157u), 0, validUf2, 4, 4);
+            Array.Copy(BitConverter.GetBytes(0x00002000u), 0, validUf2, 8, 4);
+            Array.Copy(BitConverter.GetBytes(0xE48BFF59u), 0, validUf2, 28, 4);
+            Array.Copy(BitConverter.GetBytes(0x0AB16F30u), 0, validUf2, 508, 4);
+            int uf2Blocks;
+            string uf2Err;
+            if (!Uf2FlashHelper.ValidateRp2350Uf2Bytes(validUf2, out uf2Blocks, out uf2Err) || uf2Blocks != 1) return 36;
+            Array.Copy(BitConverter.GetBytes(0xE48BFF56u), 0, validUf2, 28, 4); // RP2040 must be rejected
+            if (Uf2FlashHelper.ValidateRp2350Uf2Bytes(validUf2, out uf2Blocks, out uf2Err)) return 37;
+
+            ushort testVid = vid != 0 ? vid : (ushort)0xcafe;
+            ushort testPid = pid != 0 ? pid : (ushort)0x4026;
+            using (MainForm mf = new MainForm(testVid, testPid, 0x401d, false))
             using (EqEditorForm ef = new EqEditorForm(p, true, AppDomain.CurrentDomain.BaseDirectory, null, null))
             using (HelpGuideForm hf = new HelpGuideForm(null, 0))
             using (AiEqPasteForm af = new AiEqPasteForm(null, false))
+            using (FirmwareFlashForm ff = new FirmwareFlashForm(null, AppDomain.CurrentDomain.BaseDirectory, testVid, 0x401d, testPid, null))
             {
                 if (!mf.VerifyEqBypassHintForTest()) return 25;
                 mf.SetPreviewLevelsForTest(-11.0, 11.5, 0.0);
+                using (Form ud = mf.CreateUpdateAvailableDialog("v1.0.2", inlineTargets))
+                {
+                    if (ud.Handle == IntPtr.Zero) return 47;
+                }
                 IntPtr h1 = mf.Handle;
                 IntPtr h2 = ef.Handle;
                 IntPtr h3 = hf.Handle;
                 IntPtr h4 = af.Handle;
-                if (h1 == IntPtr.Zero || h2 == IntPtr.Zero || h3 == IntPtr.Zero || h4 == IntPtr.Zero) return 7;
+                IntPtr h5 = ff.Handle;
+                if (h1 == IntPtr.Zero || h2 == IntPtr.Zero || h3 == IntPtr.Zero || h4 == IntPtr.Zero || h5 == IntPtr.Zero) return 7;
             }
             return 0;
         }
@@ -7080,11 +8996,13 @@ namespace BiwamasuMixerGui
             Application.SetCompatibleTextRenderingDefault(false);
 
             ushort vid = BuildConfig.DefaultVid;
+            ushort bridgePid = BuildConfig.DefaultBridgePid;
             ushort pid = BuildConfig.DefaultMixerPid;
-            ReadHeaderUsbIds(AppDomain.CurrentDomain.BaseDirectory, ref vid, ref pid);
+            ReadHeaderUsbIds(AppDomain.CurrentDomain.BaseDirectory, ref vid, ref bridgePid, ref pid);
 
             bool devIds = false;
             bool explicitVid = false;
+            bool explicitBridgePid = false;
             bool explicitPid = false;
             bool selfTest = false;
             string writeIcoPath = null;
@@ -7110,6 +9028,12 @@ namespace BiwamasuMixerGui
                     ushort parsed;
                     if (TryParseHexUshort(args[++i], out parsed)) { vid = parsed; explicitVid = true; }
                 }
+                else if ((string.Equals(a, "--bridge-pid", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(a, "-BridgePid", StringComparison.OrdinalIgnoreCase)) && i + 1 < args.Length)
+                {
+                    ushort parsed;
+                    if (TryParseHexUshort(args[++i], out parsed)) { bridgePid = parsed; explicitBridgePid = true; }
+                }
                 else if ((string.Equals(a, "--pid", StringComparison.OrdinalIgnoreCase) ||
                           string.Equals(a, "-UsbPid", StringComparison.OrdinalIgnoreCase)) && i + 1 < args.Length)
                 {
@@ -7128,6 +9052,7 @@ namespace BiwamasuMixerGui
             if (devIds)
             {
                 if (!explicitVid) vid = 0xcafe;
+                if (!explicitBridgePid) bridgePid = 0x401d;
                 if (!explicitPid) pid = 0x4026;
             }
 
@@ -7153,7 +9078,7 @@ namespace BiwamasuMixerGui
             {
                 if (!createdNew)
                 {
-                    IntPtr existingHwnd = FindWindow(null, "Biwamasu-Mixer Setting tool");
+                    IntPtr existingHwnd = FindWindow(null, MainForm.WindowTitle);
                     if (existingHwnd != IntPtr.Zero)
                     {
                         if (IsIconic(existingHwnd)) ShowWindow(existingHwnd, 9);
@@ -7162,7 +9087,7 @@ namespace BiwamasuMixerGui
                     return 0;
                 }
 
-                Application.Run(new MainForm(vid, pid));
+                Application.Run(new MainForm(vid, pid, bridgePid, true));
             }
             return 0;
         }
