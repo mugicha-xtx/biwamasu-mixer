@@ -815,6 +815,13 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t id, hid_report_type_t type, cons
 }
 
 int main(void) {
+#ifdef PICO_SMPS_MODE_PIN
+    // Force onboard 3V3 SMPS into fixed-frequency PWM mode to minimize audio rail ripple
+    gpio_init(PICO_SMPS_MODE_PIN);
+    gpio_set_dir(PICO_SMPS_MODE_PIN, GPIO_OUT);
+    gpio_put(PICO_SMPS_MODE_PIN, 1);
+#endif
+
     // Keep headphone amp cleanly muted during initialization
     gpio_init(PIN_AUDIO_MUTE);
     gpio_set_dir(PIN_AUDIO_MUTE, GPIO_OUT);
