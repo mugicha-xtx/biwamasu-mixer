@@ -134,8 +134,6 @@
 3. Audio Pack基板の小さいスイッチが **`LO GAIN`** 側になっているか確認しておきます。
 
 ### 2. Switch2側（`Pico①`）とOmnibusをジャンパ線2本で繋ぐ
-![ピンの印字目印（Omnibusの0・1・[-]とPico①裏面のGP2）](images/wiring-1-placement.jpg)
-
 ![ジャンパ線2本の接続アップ](images/wiring-2-uart-link.jpg)
 
 外に置いた **Switch2側（`Pico①`）** と、**Omnibusの左側の空きスロット（`DECK 1`）** を、メス-メスのジャンパワイヤ2本で繋ぎます。

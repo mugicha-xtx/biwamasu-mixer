@@ -22,8 +22,8 @@ using Microsoft.Win32.SafeHandles;
 [assembly: AssemblyCompany("mugicha_xtx")]
 [assembly: AssemblyProduct("Biwamasu Mixer")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 mugicha_xtx (MIT License)")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("0.9.0.0")]
+[assembly: AssemblyFileVersion("0.9.0.0")]
 
 namespace BiwamasuMixerGui
 {
@@ -3287,8 +3287,8 @@ namespace BiwamasuMixerGui
 
     internal static class ReleaseUpdateChecker
     {
-        public static readonly Version CurrentAppVersion = new Version(1, 0, 0);
-        public const string CurrentAppVersionText = "1.0.0";
+        public static readonly Version CurrentAppVersion = new Version(0, 9, 0);
+        public const string CurrentAppVersionText = "0.9.0";
         public const string RepoTopPageUrl = "https://github.com/mugicha-xtx/biwamasu-mixer";
         public const string ReleasesPageUrl = "https://github.com/mugicha-xtx/biwamasu-mixer/releases";
         public const string LatestReleasePageUrl = "https://github.com/mugicha-xtx/biwamasu-mixer/releases/latest";
@@ -8899,9 +8899,10 @@ namespace BiwamasuMixerGui
             if (!GainSlider.VerifyGrooveDoubleClickSafetyForTest()) return 26;
 
             // Verify USB BCD decoding, GitHub release JSON / URL whitelist checks, and UF2 RP2350 header validation
+            Version bcd090 = HidDeviceConnection.UsbBcdToVersion(0x0090);
             Version bcd100 = HidDeviceConnection.UsbBcdToVersion(0x0100);
             Version bcd123 = HidDeviceConnection.UsbBcdToVersion(0x0123);
-            if (bcd100 == null || bcd100 != new Version(1, 0, 0) || bcd123 != new Version(1, 2, 3)) return 28;
+            if (bcd090 == null || bcd090 != new Version(0, 9, 0) || bcd100 == null || bcd100 != new Version(1, 0, 0) || bcd123 != new Version(1, 2, 3)) return 28;
 
             string relTag;
             ReleaseVersionTargets relTargets;

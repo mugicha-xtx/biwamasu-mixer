@@ -25,7 +25,6 @@ required_files = [
     'scripts/Build-Gui.ps1',
     'scripts/Control-BiwamasuMixer.ps1',
     'images/overview.jpg',
-    'images/wiring-1-placement.jpg',
     'images/wiring-2-uart-link.jpg',
     'images/wiring-3-case.jpg',
     'images/setting-tool.png',

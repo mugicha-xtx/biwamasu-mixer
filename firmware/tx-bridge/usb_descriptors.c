@@ -10,7 +10,7 @@ const tusb_desc_device_t probe_device_descriptor = {
     .bLength = sizeof(tusb_desc_device_t), .bDescriptorType = TUSB_DESC_DEVICE,
     .bcdUSB = 0x0200, .bDeviceClass = 0, .bDeviceSubClass = 0, .bDeviceProtocol = 0,
     .bMaxPacketSize0 = 64, .idVendor = (uint16_t)USB_VID,
-    .idProduct = (uint16_t)BRIDGE_USB_PID, .bcdDevice = 0x0100,
+    .idProduct = (uint16_t)BRIDGE_USB_PID, .bcdDevice = 0x0090,
     .iManufacturer = 1, .iProduct = 2, .iSerialNumber = 3, .bNumConfigurations = 1
 };
 
