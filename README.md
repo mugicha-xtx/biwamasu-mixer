@@ -1,11 +1,13 @@
 # Biwamasu Mixer
 
+**🚧現在、オープンソース用 USB PID の取得待ち中のため、まだreleasesにはzipをリリースしていません。USB PID が取得でき次第、Releases に配布ZIPをリリースします。**
+
 **Biwamasu Mixer** は、**Raspberry Pi Pico 2 H（RP2350）× 2台 ＋ Pimoroni Pico Omnibus ＋ Pimoroni Pico Audio Pack** を使い、Nintendo Switch2のUSB音声（ヘッドホン バーチャルサラウンド ON 対応）を **約 4.6〜4.9 ms の超低遅延** でPC音（Discord・ブラウザ等）とデジタルミックスして聴きながら、**OBSには無加工（EQ・音量減衰なし）のSwitch2生音** を渡せる、オープンソースのオーディオミキサーです。
 
 国内の市販パーツだけで **はんだ付け不要・ジャンパ線2本** で組めます。
 
 > [!NOTE]
-> **公開ビルドについて / USB VID/PID ステータス（※配布ZIPをダウンロードして普通に使う人は読み飛ばして大丈夫です）**  
+> **公開ビルドについて / USB VID/PID ステータス（※公開後に配布ZIPをダウンロードして普通に使う人は読み飛ばして大丈夫です）**  
 > 以下はソースコードから自分でビルドする開発者向けの案内です。本リポジトリのソースコードは **MIT License** で公開されており、初期状態の `include/usb_ids.h` は未設定プレースホルダー（`0x0000`）となっていて、テスト用の仮 ID（`0xCAFE`）が誤って配布用バイナリに混入しないようコンパイル時にブロックされます。  
 > 正規のオープンソース USB PID 取得および自分でビルドする手順は [docs/USB_PID_APPLICATION.md](docs/USB_PID_APPLICATION.md) を参照してください。
 
